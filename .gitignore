@@ -1,0 +1,33 @@
+# Ignore Airflow logs and temp files
+logs/
+*.log
+*.pid
+*.out
+
+# Ignore compiled Python files
+*.pyc
+*.pyo
+__pycache__/
+
+# Ignore environment files
+.env
+
+# Ignore database files
+airflow.db
+airflow.cfg
+
+# Ignore Airflow's custom plugins and temp files
+plugins/
+.dags/
+
+# Ignore IDE-specific files
+.vscode/
+.idea/
+
+# Ignore system files
+.DS_Store
+Thumbs.db
+
+# Ignore Airflow's test and example DAGs
+example_dags/
+venv/
