@@ -188,6 +188,8 @@ async def _save_file_to_s3(pptx_file, key):
         key = key.replace("pre_processed_content", "pre_processed_structure")
         key = key.replace("Slide_Content.json", "Slide_Generated.pptx")
         await s3_client.upload_file(pptx_file, key)
+        # delete the temp file
+        os.remove(pptx_file)
         return key
     except Exception as e:
         logging.error(f"Error in saving file to s3: {e}")
@@ -232,6 +234,8 @@ def _update_slide_entry(course_id, course, module, resource_link):
         for i in range(len(course["modules"])):
             if course["modules"][i]["module_id"] == module["module_id"]:
                 course["modules"][i] = module
+        
+        course["status"] = "Content Review"
         
         mongodb_client.update("course_design", filter={"_id": ObjectId(course_id)}, update={"$set": {"modules": course["modules"]}})
 
