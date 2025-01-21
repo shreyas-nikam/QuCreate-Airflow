@@ -6,28 +6,15 @@ Deliverables Consists of:
 4. Assessment: Assessment generated using the content from the previous step.
 """
 import os
+import subprocess
 from utils.s3_file_manager import S3FileManager
 from utils.mongodb_client import AtlasClient
 from bson.objectid import ObjectId
-import json
 import logging
-from pathlib import Path
 from pptx import Presentation
-import win32com.client
-import pythoncom
-import time
-import random
-import multiprocessing
-import speechsdk
-import uuid
-from pyMuPDF import fitz
 import fitz
-import logging
-import random
 import random
 import multiprocessing
-from pptx import Presentation
-import os
 from pathlib import Path
 import time
 import azure.cognitiveservices.speech as speechsdk
@@ -76,7 +63,6 @@ def _get_resource_link(module):
         logging.error(f"Error in getting slide content: {e}")
         return None
     
-
 def _download_slide(slide_link):
     """
     Download the slide from the slide_link
@@ -110,33 +96,31 @@ def _get_transcript_from_ppt(ppt):
         speaker_notes.append(text_frame.text.replace("�", ""))
     return speaker_notes
 
-# TODO
-def _ppt_to_pdf(source, destination):
+
+def _ppt_to_pdf(input_file, output_dir):
+    """
+    Convert a PowerPoint file to PDF using LibreOffice.
     
-    Path(destination).mkdir(parents=True, exist_ok=True)
-
-    ppttoPDF = 32
-    queue = []
-    for file in os.listdir(source):
-        if file.endswith(".pptx"):
-            queue.append(file)
-
-    while queue:
-        try:
-            file = queue.pop(0)
-            in_file = os.path.join(Path(source).absolute(), file)
-            out_file = os.path.join(Path(destination).absolute(), file[:-5]+".pdf")
-            powerpoint = win32com.client.Dispatch("Powerpoint.Application", pythoncom.CoInitialize())
-            deck = powerpoint.Presentations.Open(in_file)
-            deck.SaveAs(out_file, ppttoPDF) # formatType = 32 for ppt to pdf
-            deck.Close()
-            powerpoint.Quit()
-            powerpoint = None
-            pythoncom.CoUninitialize()
-            time.sleep(2)
-        except Exception as e:
-            queue.append(file)
-            continue
+    :param input_file: Path to the .pptx file
+    :param output_dir: Directory where the PDF will be saved
+    """
+    if not os.path.exists(input_file):
+        raise FileNotFoundError(f"File {input_file} does not exist")
+    
+    if not os.path.isdir(output_dir):
+        raise NotADirectoryError(f"{output_dir} is not a valid directory")
+    
+    # LibreOffice command to convert to PDF
+    command = [
+        "libreoffice",
+        "--headless",
+        "--convert-to", "pdf",
+        "--outdir", output_dir,
+        input_file
+    ]
+    
+    subprocess.run(command, check=True)
+    print(f"Converted {input_file} to PDF and saved in {output_dir}")
 
 def _create_images(file_path, module_id):
     # Convert the ppt to pdf

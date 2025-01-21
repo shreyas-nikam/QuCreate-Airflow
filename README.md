@@ -1,3 +1,10 @@
+Install Libreoffice for converting ppt to pdf:
+```bash
+sudo apt update
+sudo apt install libreoffice
+```
+
+
 Steps to run the DAG
 
 1. Install Airflow using `pip install apache-airflow`
