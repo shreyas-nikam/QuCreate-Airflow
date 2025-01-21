@@ -1,36 +1,34 @@
-import re
+import vimeo
 
-# Your markdown content
-markdown_content = """
-# Topic A
-## Subtopic A.1
-- Point 1
-- Point 2
+# Replace these with your actual credentials
+access_token = '0dfed8155bbbe50bb361aa5b41d01f85'
+client_id = 'b6d68cc72c59770fccf5e9d75e8d557d20b18a5b'
+client_secret = 'EtQCDyR0JfxErxc25B/G08gI4rT7yoR3h2M+W38TaE7BazzDVUubtS7WOWeqjX+3u/MKYWV/dFZXLRde5VunFFV4KGzeHvHdkEGG+BsbPKCh6kPQJ5V3cbuOlfcPn+ip'
 
-# Topic B
-## Subtopic B.1
-- Point 1
-## Subtopic B.2
-- Point 1
-![image](link)
-"""
+# Initialize the Vimeo client
+client = vimeo.VimeoClient(
+    token=access_token,
+    key=client_id,
+    secret=client_secret
+)
 
-# Define the regex pattern to match top-level headers
-pattern = r'(?m)^# .*$'
+# Path to your video file
+video_file_path = 'video.mp4'
 
-# Find all matches for top-level headers
-matches = list(re.finditer(pattern, markdown_content))
+try:
+    # Upload the video
+    uri = client.upload(video_file_path)
+    print(f"Video uploaded successfully. URI: {uri}")
 
-# Initialize a list to hold the split sections
-sections = []
+    # Retrieve video metadata
+    video_data = client.get(uri + '?fields=link').json()
+    video_link = video_data['link']
+    print(f"Video link: {video_link}")
 
-# Iterate over the matches to extract sections
-for i in range(len(matches)):
-    start = matches[i].start()
-    end = matches[i + 1].start() if i + 1 < len(matches) else len(markdown_content)
-    sections.append(markdown_content[start:end].strip())
+    # Construct the embed link
+    video_id = video_link.split('/')[-1]
+    embed_link = f"https://player.vimeo.com/video/{video_id}"
+    print(f"Embed link: {embed_link}")
 
-# Output the split sections
-for section in sections:
-    print(section)
-    print("-" * 20)
+except vimeo.exceptions.VideoUploadFailure as e:
+    print(f"Error uploading video: {e}")

@@ -23,6 +23,7 @@ Publishing artifacts consist of:
 
 course_object = {
     "app_name": "",
+    "course_id": "",
     "app_code": "",
     "app_image_location": "",
     "home_page_introduction": "",
@@ -34,9 +35,123 @@ course_object = {
     "course_module_information": [],
     "course_names_slides": [],
     "videos_links": [],
+    "module_ids": [],
     "has_chatbot": False,
     "has_quiz": False,
     "external_link": "",
     "contact_form_link": "",
     "disclaimer": "\nThis course contains content that has been partially or fully generated using artificial intelligence (AI) technology. While every effort has been made to ensure the accuracy and quality of the materials, please note that AI-generated content may not always reflect the latest developments, best practices, or personalized nuances within the field. We encourage you to critically evaluate the information presented and consult additional resources where necessary.\n"
 }
+
+
+"""
+# Only courses will be able to be published
+1. Get the course if it is already published
+2. Get the modules ready for publishing from the queue. Do not delete them from the queue. 
+3. Get the artifacts for publishing the modules.
+4. append the artifacts to the appropriate fields
+5. update Mongodb with the changes.
+"""
+
+from utils.mongodb_client import AtlasClient
+from bson import ObjectId
+import logging
+
+
+def handle_update_course(course_id):
+    """
+    Steps:
+    1. Get the course object from courses
+    2. Get the course design from the courses_design.
+    3. Get the modules ready for publishing from the publishing queue.
+    4. For all the modules in the publishing queue, update the course objects.
+    5. Update the course object in the courses collection.
+    6. Update the course design with the status for the published courses in the course_design collection.
+    """
+    try:
+        mongo_client = AtlasClient()
+        course = mongo_client.find("courses", filter={"course_id": ObjectId(course_id)})
+        if not course:
+            return "Course not found"
+        
+        course = course[0]
+
+        course_design = mongo_client.find("course_design", filter={"_id": ObjectId(course_id)})
+        if not course_design:
+            return "Course design not found"
+        
+        course_design = course_design[0]
+
+        modules = mongo_client.find("publishing_queue", filter={"course_id": ObjectId(course_id)})
+
+        slide_links = []
+        slide_names = []
+        video_links = []
+        module_ids = []
+        course_module_information = []
+
+        for module in modules:
+            module_id = module["module_id"]
+            module_ids.append(module_id)
+            module_obj = next((m for m in course_design.get("modules", []) if m.get("module_id") == ObjectId(module_id)), None)
+            slide_names.append(module_obj["module_name"])
+
+            for resource in module_obj['post_processed_deliverables']:
+                if resource['resource_type'] == "Slide_Generated":
+                    slide_link = resource['resource_link']
+                    slide_links.append(slide_link)
+                elif resource['resource_type'] == "Video":
+                    video_link = resource['resource_link']
+                    video_links.append(video_link)
+                elif resource['resource_type'] == "Note":
+                    notes_link = resource['resource_link']
+                    with open(notes_link, "r") as f:
+                        course_module_information.append(f.read())
+        
+        course["slides_links"] = slide_links
+        course["course_names_slides"] = slide_names
+        course["videos_links"] = video_links
+        course["module_ids"] = module_ids
+        course["course_module_information"] = course_module_information
+        course["course_names_videos"] = slide_names
+
+        mongo_client.update("courses", filter={"course_id": ObjectId(course_id)}, update=course)
+        
+        for module in modules:
+            module_id = module["module_id"]
+            for index, module_obj in enumerate(course_design.get("modules", [])):
+                if module_obj.get("module_id") == ObjectId(module_id):
+                    course_design["modules"][index]["status"] = "Published"
+                    break
+        
+        
+        mongo_client.update("course_design", filter={"_id": ObjectId(course_id)}, update=course_design)
+        mongo_client.update("course_design", filter={"_id": ObjectId(course_id)}, update={"$set": {"status": "Published"}})
+
+
+    except Exception as e:
+        logging.error(f"Error in updating course: {e}")
+
+    
+def handle_create_course(course_id):
+    """
+    Steps: 
+    Create a new course object
+    Get the course from the course design
+    Get the modules ready for publishing from the publishing queue
+    For all the modules in the publishing queue, update the course objects
+    Insert the course object in the courses collection
+    Update the course design with the status for the published courses in the course_design collection
+
+    """
+
+
+def publish_course(course_id):
+    mongo_client = AtlasClient()
+    course = mongo_client.find("courses", filter={"course_id": ObjectId(course_id)})
+    if not course:
+        handle_update_course(course_id)
+    else:
+        handle_create_course(course_id)
+
+    
