@@ -11,6 +11,7 @@ import json
 import logging
 from pathlib import Path
 from pptx import Presentation
+from pptx.util import Inches, Pt
 
 
 def _get_course_and_module(course_id, module_id):
@@ -94,8 +95,6 @@ def _generate_pptx(markdown):
         logging.error(f"Error in generating pptx: {e}")
         return None
     
-
-from pptx.util import Inches, Pt
 
 def _format_ppt(output_ppt_path, speaker_notes,
                logo_path="assets/logo.jpg",
@@ -195,6 +194,7 @@ async def _save_file_to_s3(pptx_file, key):
         logging.error(f"Error in saving file to s3: {e}")
         return None
 
+
 def _update_slide_entry(course_id, course, module, resource_link):
     try:
         mongodb_client = AtlasClient()
@@ -244,7 +244,6 @@ def _update_slide_entry(course_id, course, module, resource_link):
     except Exception as e:
         logging.error(f"Error in updating entry: {e}")
 
-        
 
 async def process_structure_request(course_id, module_id):
     """

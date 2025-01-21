@@ -63,14 +63,14 @@ def _get_resource_link(module):
         logging.error(f"Error in getting slide content: {e}")
         return None
     
-def _download_slide(slide_link):
+def _download_slide(slide_link, download_path):
     """
     Download the slide from the slide_link
     """
     try:
         s3_client = S3FileManager()
-        slide_path = s3_client.download_file(slide_link)
-        return slide_path
+        s3_client.download_file(slide_link, download_path)
+        return download_path
     except Exception as e:
         logging.error(f"Error in downloading slide: {e}")
         return None
@@ -130,7 +130,7 @@ def _create_images(file_path, module_id):
 
 
     # Convert pdf to images
-    source_file = Path(f"{OUTPUT_PATH}/{module_id}/{module_id}.pdf")
+    source_file = Path(file_path)
     target_folder = Path(f"{Path(OUTPUT_PATH)}/{module_id}/images")
     Path(target_folder).mkdir(parents=True, exist_ok=True)
 
@@ -145,7 +145,7 @@ def _create_images(file_path, module_id):
         doc.close()
 
 
-
+# CHECK
 def _get_audio(module_id, text, filename):
     OUTPUT_PATH = "output"
 
@@ -153,8 +153,7 @@ def _get_audio(module_id, text, filename):
     speech_key = os.getenv("AZURE_TTS_SPEECH_KEY")
 
 
-    speech_config = speechsdk.SpeechConfig(
-        subscription=speech_key, region=service_region)
+    speech_config = speechsdk.SpeechConfig(subscription=speech_key, region=service_region)
     speech_config.speech_synthesis_language = "en-US"
     speech_config.speech_synthesis_voice_name = "en-US-AvaNeural"
 
@@ -223,7 +222,7 @@ def _create_audio(module_id, transcript):
         _get_audio(module_id, notes, f"audio_{index+1}.wav")
 
 
-def stitch_videos(module_id, updation_map):
+def _stitch_videos(module_id, updation_map):
     OUTPUT_PATH = "output"
     video_files = list(updation_map.values())
     clips = [VideoFileClip(video_file) for video_file in video_files]
@@ -237,20 +236,17 @@ def _get_questions(module_content, num_questions=10):
     trials = 5
     prompt_handler = PromptHandler()
     llm = LLM()
-    print("Getting questions")
     while trials > 0:
-        print(trials)   
         try:
             prompt = prompt_handler.get_prompt("CONTENT_TO_QUESTIONS_PROMPT")
-            response = llm.get_response(prompt, inputs={
-                "CONTENT": module_content, "NUM_QUESTIONS": num_questions})
+            response = llm.get_response(prompt, inputs={"CONTENT": module_content, "NUM_QUESTIONS": num_questions})
             try:
                 response = response[response.find("["):response.rfind("]") + 1]
                 return json.loads(response)
             except:
                 return json.loads(response)
         except Exception as e:
-            print(e)
+            logging.error(f"Error in getting questions: {e}")
             trials -= 1
             continue
 
@@ -263,40 +259,29 @@ def _save_questions(questions, module_id):
 
 
 def _get_questions_helper(module_content, module_id, chunk_size=20000):
-    
-    OUTPUT_PATH = "output"
-
     overall_questions = {}
-    for module_id in os.listdir(f"{OUTPUT_PATH}/{module_id}"):
 
-        try:
-            print("Getting Questions for Module ", module_id)
-            questions = []
-            text = module_content
-            # text_1 = text[:len(text)//2]
-            # questions = _get_questions(text_1, 5)
-            # text_2 = text[len(text)//2:]
-            # questions.extend(_get_questions(text_2, 5))
-            chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
-            for chunk in chunks:
-                questions.extend(_get_questions(chunk, 5))
+    try:
+        questions = []
+        text = module_content
+        chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+        for chunk in chunks:
+            questions.extend(_get_questions(chunk, 5))
 
-            for index, question in enumerate(questions):
-                questions[index]["uuid"] = str(uuid.uuid4())
+        for index, question in enumerate(questions):
+            questions[index]["uuid"] = str(uuid.uuid4())
 
-            overall_questions[module_id] = questions
-            _save_questions(overall_questions, module_id)
-        except Exception as e:
-            print(e)
-            continue
+        overall_questions[module_id] = questions
+        _save_questions(overall_questions, module_id)
+    except Exception as e:
+        logging.error(f"Error in getting questions for module {module_id}: {e}")
     _save_questions(overall_questions, module_id)
 
 
-
 def _add_silence_to_audio(module_id, audio_file_name):
-    OUTPUT_PATH = "output"
-    command = r"""ffmpeg -i ".\{output_path}\{module_id}\audio\{audio_file_name}" -i .\inputs\silence.wav -filter_complex "[0:a][1:a]concat=n=2:v=0:a=1" ".\{output_path}\{module_id}\audio\{new_audio_file_name}" -hide_banner -loglevel error""".format(
-        output_path=OUTPUT_PATH, module_id=module_id, audio_file_name=audio_file_name, new_audio_file_name=audio_file_name.replace("_", "_with_silence_"))
+    OUTPUT_PATH = f"output/{module_id}/audio"
+    new_audio_filename = audio_file_name.replace("_", "_with_silence_")
+    command = f"""ffmpeg -i "{OUTPUT_PATH}/{audio_file_name}" -i silence.wav -filter_complex "[0:a][1:a]concat=n=2:v=0:a=1" "{OUTPUT_PATH}/{new_audio_filename}" -hide_banner -loglevel error"""
     os.system(command)
 
 def _create_video_parallel(module_id, slide_number, image):
@@ -329,13 +314,10 @@ def _create_video_parallel(module_id, slide_number, image):
     return slide_number+1, str(Path(f"{video_folder}/slide_{slide_number+1}.mp4"))
 
 
-
-
 def _create_videos(module_id):
     updation_map = {}
     OUTPUT_PATH = "output"
     image_folder = Path(f"{OUTPUT_PATH}/{module_id}/images")
-    audio_folder = Path(f"{OUTPUT_PATH}/{module_id}/audio")
     video_folder = Path(f"{OUTPUT_PATH}/{module_id}/video")
     Path(video_folder).mkdir(parents=True, exist_ok=True)
 
@@ -361,7 +343,7 @@ def _create_videos(module_id):
         file.write(json.dumps(updation_map))
 
 
-    stitch_videos(module_id, updation_map)
+    _stitch_videos(module_id, updation_map)
 
 def _generate_video(slide_path, module_id):
     transcript = _get_transcript_from_ppt(slide_path)
@@ -376,29 +358,28 @@ def _generate_assessment(slide_content):
     """
     try:
         module_content = slide_content
-        questions = _get_questions_helper(module_content, 10)
-        return questions
+        _get_questions_helper(module_content, 10)
     except Exception as e:
         logging.error(f"Error in generating assessment: {e}")
         return None
     
     
-def _generate_chatbot(source, destination):
+def _generate_chatbot(slide_content, destination):
     """
     Creates a retriever object for the course
     
     Args:
-    source: Path to the folder containing the course content
+    file_name: Path to the folder containing the course content
     destination: Path to the folder where the retriever object will be saved
     """
     retriever = Retriever()
 
     Path(destination).mkdir(parents=True, exist_ok=True)
 
-    retriever.create_vector_store(file_name=source, db_path=destination)
+    retriever.create_vector_store(slide_content, db_path=destination)
 
 
-def upload_files(video_path, assessment, chatbot, module_id, resource_link):
+async def upload_files(video_path, assessment_path, chatbot_path, module_id, resource_link):
     """
     Upload the video, assessment file, chatbot to s3
     """
@@ -406,18 +387,22 @@ def upload_files(video_path, assessment, chatbot, module_id, resource_link):
         s3_client = S3FileManager()
         key = resource_link.split("/")[-1]
         video_key = resource_link.replace(key, f"{module_id}.mp4")
-        video_link = s3_client.upload_file(video_path)
+        await s3_client.upload_file(video_path, video_key)
+        video_link = video_key
 
         assessment_key = resource_link.replace(key, f"{module_id}_assessment.json")
-        assessment_link = s3_client.upload_file(assessment)
+        await s3_client.upload_file(assessment_path, assessment_key)
+        assessment_link = assessment_key
 
-        # TODO
-        chatbot_link = ""
-        # chatbot_key = resource_link.replace(key, f"{module_id}_chatbot.pkl")
-        # chatbot_link = s3_client.upload_file(chatbot)
+        for file in os.listdir(chatbot_path):
+            if "retriever" in file:
+                # create the key properly by replacing the resource link's key with the new file's key starting from retriever
+                chatbot_key = resource_link.replace(key, "retriever"+file.split("retriever")[1])
+                s3_client.upload_file(file, chatbot_key)
 
-
+        chatbot_link = chatbot_key.split("retriever")[0] + "retriever"
         return video_link, assessment_link, chatbot_link
+    
     except Exception as e:
         logging.error(f"Error in uploading files: {e}")
         return None, None, None
@@ -442,7 +427,6 @@ def update_module_with_deliverables(module, video_link, assessment_link, chatbot
                 "resource_description": "Assessment generated from the slide content",
                 "resource_id": ObjectId()
             },
-            # TODO for chatbot
         ]
 
         for index in range(len(course["modules"])):
@@ -475,11 +459,12 @@ async def process_deliverables_request(course_id, module_id):
 
     course, module = _get_course_and_module(course_id, module_id)
     slide_link = _get_resource_link(module)
-    downloaded_slide_path = _download_slide(slide_link)
+    downloaded_slide_path = _download_slide(slide_link, download_path=f"output/{module_id}")
     slide_content = _get_slide_content(slide_link)
     video_path = _generate_video(downloaded_slide_path, module_id)
-    assessment = _generate_assessment(slide_content)
-    chatbot = _generate_chatbot(slide_content)
-    video_link, assessment_link, chatbot_link = upload_files(video_path, assessment, chatbot)
-    update_module_with_deliverables(module, video_link, assessment_link, chatbot_link)
+    _generate_assessment(slide_content)
+    assessment_path = f"output/{module_id}/questions.json"
+    chatbot = _generate_chatbot(slide_content, destination=f"output/{module_id}")
+    video_link, assessment_link, chatbot_link = upload_files(video_path, assessment_path, chatbot, module_id, slide_link)
+    update_module_with_deliverables(module, video_link, assessment_link, chatbot_link, module_id, course, course_id)
     return True

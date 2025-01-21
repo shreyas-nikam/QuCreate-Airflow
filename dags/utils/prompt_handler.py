@@ -16,7 +16,7 @@ class PromptHandler:
     update_prompt(prompt_name, prompt) - update the prompt in the dictionary
     write_prompts() - write the prompts to the file
     """
-    def __init__(self, file_path=JSONHandler("inputs/static_config.json").get_config()['FILE_PATHS']['PROMPTS_FILE_PATH']):
+    def __init__(self, file_path="prompts.py", prompts=prompts):
         # Initialize the PromptHandler object with the input prompts and file path
         self.file_path = file_path
         self.prompts = prompts

@@ -1,32 +1,36 @@
-import subprocess
-import os
+import re
 
-def ppt_to_pdf(input_file, output_dir):
-    """
-    Convert a PowerPoint file to PDF using LibreOffice.
-    
-    :param input_file: Path to the .pptx file
-    :param output_dir: Directory where the PDF will be saved
-    """
-    if not os.path.exists(input_file):
-        raise FileNotFoundError(f"File {input_file} does not exist")
-    
-    if not os.path.isdir(output_dir):
-        raise NotADirectoryError(f"{output_dir} is not a valid directory")
-    
-    # LibreOffice command to convert to PDF
-    command = [
-        "libreoffice",
-        "--headless",
-        "--convert-to", "pdf",
-        "--outdir", output_dir,
-        input_file
-    ]
-    
-    subprocess.run(command, check=True)
-    print(f"Converted {input_file} to PDF and saved in {output_dir}")
+# Your markdown content
+markdown_content = """
+# Topic A
+## Subtopic A.1
+- Point 1
+- Point 2
 
-# Example usage
-input_pptx = "temp.pptx"
-output_directory = "/home/qu-user1/Github/QuCreate-airflow"
-ppt_to_pdf(input_pptx, output_directory)
+# Topic B
+## Subtopic B.1
+- Point 1
+## Subtopic B.2
+- Point 1
+![image](link)
+"""
+
+# Define the regex pattern to match top-level headers
+pattern = r'(?m)^# .*$'
+
+# Find all matches for top-level headers
+matches = list(re.finditer(pattern, markdown_content))
+
+# Initialize a list to hold the split sections
+sections = []
+
+# Iterate over the matches to extract sections
+for i in range(len(matches)):
+    start = matches[i].start()
+    end = matches[i + 1].start() if i + 1 < len(matches) else len(markdown_content)
+    sections.append(markdown_content[start:end].strip())
+
+# Output the split sections
+for section in sections:
+    print(section)
+    print("-" * 20)

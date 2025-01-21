@@ -136,11 +136,6 @@ The tone should be as if you are talking about what the course module will cover
 The summary should be concise and cover the main points of the content.
 Do not return anything other than the output string.
 
-
-Input:
-Content: {CONTENT}
-
-
 Output format:
 "Summary of the content in 2 sentences and 3-5 bullet points."
 """,
@@ -206,6 +201,81 @@ Output:
 I am working on the module {MODULE_NAME} and I need detailed research notes on the topic {TOPIC_NAME}. 
 Please provide an in-depth explanation that includes key concepts, theories, examples, links to images, links to diagrams, and any important studies or data related to the topic. 
 Organize the notes in a clear and structured way, with headings and subheadings if necessary. Make sure the notes are suitable for academic research, including any relevant citations or references to major works in this area.
+""",
+
+"GET_OUTLINE_PROMPT":"""
+You are creating an outline for a presentation for a course. 
+For all the material that is uploaded, create an outline based on the user's instructions.
+The outline should be structured and organized in a logical flow.
+The outline can have interleaved text and images.
+The outline should have a header, bullet points, and image links in markdown format.
+Since you cannot directly produce an image, the image block takes in a file path - you should write in the file path of the image instead.
+How do you know which image to generate? Each context chunk will contain metadata including an image render of the source chunk, given as a file path. 
+Include ONLY the images from the chunks that have heavy visual elements (you can get a hint of this if the parsed text contains a lot of tables).
+You MUST include at least one image block in the output.
+
+Output format:
+```markdown
+# Module 1: Introduction to AI in Finance
+
+- Topic 1: AI in Financial Report Writing
+- Topic 2: Natural Language Processing (NLP) in Finance
+- Topic 3: Generative AI for Marketing and Client Engagement
+
+![Image Description in detail for speaker notes](path/to/image.jpg)
+
+# Module 2: AI in Financial Risk Management
+
+- Topic 1: Predictive Analytics for Risk Assessment
+- Topic 2: AI in Fraud Detection and Prevention
+- Topic 3: Automated Compliance Monitoring
+- Topic 4: AI in Fraud Detection and Prevention
+
+... and so on.
+```
+
+Instructions:
+
+
+
+""",
+
+"GET_SLIDE_PROMPT":
+"""
+Based on the outline and the context provided, give me the contents for the a slide and the speaker notes for the corresponding slide.
+The slide should have slide header, slide content, and speaker notes.
+
+Slide Header Instructions:
+The headers should not be long and appropriate for the content on the slide.  
+
+Slide Content Instructions:
+1. Summarize the content in 4-5 bullet points only.
+2. Give me the output in the given example Markdown format only.  
+3. Bullet points should compulsorily begin with a *.  
+4. Do not have any headers with less than 3 bullet points.
+
+
+Example output markdown format for slide content:  
+```markdown
+
+* In a point, here's an [URL to example](https://www.example.com). This explains why this url is important.
+* One  
+    * One A focuses on **this** point that speaks about the importance of this point that is highlighted in bold.
+    * One B has this **important point** that is crucial for understanding the content. All the highlighted points should be in bold.
+* Two is the second point that is important for the content.
+* Three is the third point that is important for the content.
+
+Speaker Notes Instructions:
+1. The speaker notes should be in a neutral tone with a continuous flow.  
+2. Do not expand acronyms in the speaker notes.
+3. Do not have any opening remarks like hello, welcome or ending remarks like thank you in the speaker notes.  
+4. Do not return anything other than the output string.  
+5. Speak in continuation as if you were continuing from the previous slide. Do not use comments like 'today, we will discuss', 'in this slide', 'this slide discusses', etc. in the speaker notes.  
+6. For formulae, do not use latex content, instead use words appropriate for the formulae so that they can be converted to audio. 
+
+
+Outline for the slide:
+
 """
 
 }
