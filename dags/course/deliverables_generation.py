@@ -443,7 +443,7 @@ def update_module_with_deliverables(module, video_link, assessment_link, chatbot
     except Exception as e:
         logging.error(f"Error in updating module with deliverables: {e}")
 
-async def process_deliverables_request(course_id, module_id):
+async def process_deliverables_request(entry_id):
     """
     Steps:
     1. Get the course and module object from the course_id and module_id
@@ -456,6 +456,15 @@ async def process_deliverables_request(course_id, module_id):
     8. Update the module with the video, assessment, chatbot links in pre_processed_deliverables
     9. Update the status of the course to Deliverables Review
     """
+    mongodb_client = AtlasClient()
+    entry = mongodb_client.find("deliverables_generation_queue", filter={"_id": ObjectId(entry_id)})
+
+    if not entry:
+        return False
+    
+    entry = entry[0]
+    course_id = entry["course_id"]
+    module_id = entry["module_id"]
 
     course, module = _get_course_and_module(course_id, module_id)
     slide_link = _get_resource_link(module)

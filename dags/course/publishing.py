@@ -257,8 +257,9 @@ def handle_create_course(course_id):
         logging.error(f"Error in creating course: {e}")
 
 
-def publish_course(course_id):
+def publish_course(entry_id):
     mongo_client = AtlasClient()
+    course_id = mongo_client.find("in_publishing_queue", filter={"_id": ObjectId(entry_id)})[0]["course_id"]
     course = mongo_client.find("courses", filter={"course_id": ObjectId(course_id)})
     if not course:
         handle_update_course(course_id)

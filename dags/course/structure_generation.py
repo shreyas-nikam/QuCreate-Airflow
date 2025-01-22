@@ -245,7 +245,7 @@ def _update_slide_entry(course_id, course, module, resource_link):
         logging.error(f"Error in updating entry: {e}")
 
 
-async def process_structure_request(course_id, module_id):
+async def process_structure_request(entry_id):
     """
     Steps:
     1. Get mongodb object the course id, module id in the course_design collection.
@@ -254,7 +254,13 @@ async def process_structure_request(course_id, module_id):
     4. Generate the pptx file using the markdown file.
     5. Extract the transcript from the jso
     """
-
+    mongodb_client = AtlasClient()
+    entry = mongodb_client.find("structure_generation_queue", filter={"_id": ObjectId(entry_id)})
+    if not entry:
+        return "Entry not found"
+    entry = entry[0]
+    course_id = entry["course_id"]
+    module_id = entry["module_id"]
     course, module = _get_course_and_module(course_id, module_id)
     slide_content = _get_resource_link(module)
     markdown, transcript = _extract_content(slide_content)

@@ -70,7 +70,17 @@ def upload_outline(course_id, module_id, outline):
     except Exception as e:
         logging.error(f"Error in uploading outline: {e}")
 
-async def process_outline(course_id, module_id, instructions):
+async def process_outline(entry_id):
+    mongodb_client = AtlasClient()
+    entry = mongodb_client.find("outline_generation_queue", filter={"_id": ObjectId(entry_id)})
+    if not entry:
+        return "Entry not found"
+    
+    entry = entry[0]
+    course_id = entry.get("course_id")
+    module_id = entry.get("module_id")
+    instructions = entry.get("instructions")
+    
     # Fetch all the artifacts.
     artifacts_path = await fetch_artifacts(course_id, module_id)
     # Feed it as files to the assistants api.

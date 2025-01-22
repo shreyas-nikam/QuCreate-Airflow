@@ -59,7 +59,11 @@ def _get_course_and_module(course_id, module_id):
         logging.error(f"Error in getting course and module: {e}")
         return None, None
 
-def generate_content(course_id, module_id):
+def generate_content(entry_id):
+    mongodb_client = AtlasClient()
+    entry = mongodb_client.find("in_content_generation_queue", filter={"_id": ObjectId(entry_id)})
+    course_id = entry[0].get("course_id")
+    module_id = entry[0].get("module_id")
     outline = fetch_outline(course_id, module_id)
     slides = get_slides(outline)
     with open(f"output/{module_id}/slides.json", "w") as f:
