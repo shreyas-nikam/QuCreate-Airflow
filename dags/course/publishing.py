@@ -18,8 +18,23 @@ Publishing artifacts consist of:
 2. iterative addition and publishing
 """
 
-{"_id":"67094967b06a9ba0559cbb7e","app_name":"QU AI Fall School: Use and Governance of Generative AI at Large US Financial Institutions","app_image_location":"https://qucoursify.s3.amazonaws.com/QU-AI-Fall-School-2024/Guest-Lecture-2/title-page.png","home_page_introduction":"# Introduction","short_description":"The QU AI Fall School Lecture 2, part of the 2024 series, features Jacob Kosoff from Bank of America. Jacob Kosoff is a leading expert in data science and model development, with extensive experience in financial institutions. His expertise in generative AI positions him well to discuss its role in modern finance.","document_link":"","certificate_path":"","slides_links":[""],"course_names_videos":[""],"course_module_information":[""],"course_names_slides":[],"videos_links":[""],"has_chatbot":false,"has_quiz":false,"__v":{"$numberInt":"0"},"external_link":"https://academy.qusandbox.com/market/670598c150c75511c728b53b"}
-{"_id":"66f1af7741d4a2428f79ff51","app_code":"AAVIA","app_image_location":"https://qucoursify.s3.us-east-1.amazonaws.com/qu-aavia/course-image.png","app_name":"Army Aviation's Role in Unified Land Operations","home_page_introduction":"## Introduction\n\nArmy Aviation is a vital component of Unified Land Operations, seamlessly bridging air and ground capabilities to achieve strategic objectives in dynamic and complex environments. This course provides a comprehensive overview of Army Aviation's role, emphasizing its core competencies, integration into operations, and adaptability within diverse operational environments. Designed for both newcomers and experienced professionals, this course will enhance your understanding of Army Aviation's pivotal contributions to mission success.\n\n## Course Overview\n\nThis course is divided into four modules, each focusing on a critical aspect of Army Aviation within Unified Land Operations:\n\n1. **Module 1: Introduction**  \n   Gain a foundational understanding of Army Aviation's mission, history, and significance in modern military operations.\n\n2. **Module 2: Core Competencies of Army Aviation**  \n   Explore the essential skills and capabilities that define Army Aviation, including mobility, reconnaissance, and close combat support.\n\n3. **Module 3: Army Operations in the Aviation Framework**  \n   Understand how Army Aviation integrates into operational planning and execution, supporting ground forces across a wide range of missions.\n\n4. **Module 4: Operational Environment**  \n   Examine the challenges and dynamics of the modern operational environment, focusing on how Army Aviation adapts to diverse and evolving threats.\n\nBy completing this course, you will gain a holistic understanding of Army Aviation's strategic and operational roles, preparing you to effectively apply this knowledge in military contexts.\n\n\n\n\n### Reference:\n[FM 1-100: \"Army Aviation Operations\" (PDF). Headquarters, Department of the Army. 21 February 1997. Archived from the original (PDF) on 30 January 2023.](https://web.archive.org/web/20230317152129/https://irp.fas.org/doddir/army/fm3-04.pdf)","short_description":"Army Aviation's Role in Unified Land Operations explores how aviation integrates with ground forces to achieve mission success. This course provides insights into its tactical, operational, and future innovations.","document_link":"https://web.archive.org/web/20230317152129/https://irp.fas.org/doddir/army/fm3-04.pdf","retriever_db_path":"","hybrid_db_path":"","questions_file":"","certificate_path":"","chatbot_location":"","slides_links":["https://qucoursify.s3.us-east-1.amazonaws.com/qu-aavia/slides/SECTION+I++OVERVIEW.pdf","https://qucoursify.s3.us-east-1.amazonaws.com/qu-aavia/slides/SECTION+II++CORE+COMPETENCIES+OF+ARMY+AVIATION.pdf","https://qucoursify.s3.us-east-1.amazonaws.com/qu-aavia/slides/SECTION+III++ARMY+AVIATION+IN+THE+OPERATIONAL+FRAMEWORK.pdf","https://qucoursify.s3.us-east-1.amazonaws.com/qu-aavia/slides/SECTION+IV++OPERATIONAL+ENVIRONMENT.pdf"],"course_names_videos":["Introduction","Core Competencies of Army Aviation","Integration of Aviation with Ground Forces","Operational Environment"],"course_module_information":["In this module, you'll gain a foundational understanding of Army Aviation's history, mission, and evolution. This includes its origins, development as a key operational component, and its unique contributions to modern warfare. By the end of this module, you'll have a solid grasp of the overarching framework and significance of Army Aviation.\n\n### Key Topics:\n- Historical development of Army Aviation  \n- The mission and strategic importance of Army Aviation  \n- Current roles and responsibilities within Unified Land Operations  \n\n### Reference:\n[FM 1-100: \"Army Aviation Operations\" (PDF). Headquarters, Department of the Army. 21 February 1997. Archived from the original (PDF) on 30 January 2023.](https://web.archive.org/web/20230317152129/https://irp.fas.org/doddir/army/fm3-04.pdf)","This module focuses on the essential skills and capabilities that form the backbone of Army Aviation operations. You'll explore topics such as aerial reconnaissance, troop transport, close combat support, and sustainment operations. This module highlights how these core competencies ensure mission success across various operational contexts.\n\n### Key Topics:\n- Aerial reconnaissance and surveillance  \n- Air mobility and troop transport  \n- Close combat attack and support roles  \n- Logistics and sustainment through aviation  \n\n### Reference:\n[FM 1-100: \"Army Aviation Operations\" (PDF). Headquarters, Department of the Army. 21 February 1997. Archived from the original (PDF) on 30 January 2023.](https://web.archive.org/web/20230317152129/https://irp.fas.org/doddir/army/fm3-04.pdf)","This module examines how Army Aviation integrates into broader operational frameworks, supporting ground forces and enhancing mission effectiveness. You'll learn about joint planning, coordination, and execution of missions where aviation and ground elements work in unison.\n\n### Key Topics:\n- Joint planning and coordination with ground forces  \n- Aviation's role in offensive, defensive, and stability operations  \n- Case studies of successful integration in past operations  \n\n### Reference:\n[FM 1-100: \"Army Aviation Operations\" (PDF). Headquarters, Department of the Army. 21 February 1997. Archived from the original (PDF) on 30 January 2023.](https://web.archive.org/web/20230317152129/https://irp.fas.org/doddir/army/fm3-04.pdf)","In this module, you'll explore the dynamic and evolving operational environments in which Army Aviation operates. Topics include adapting to diverse terrains, weather conditions, and emerging threats. You'll also delve into the challenges posed by adversaries and the importance of situational awareness in complex environments.\n\n### Key Topics:\n- Adapting to diverse terrains and climates  \n- Countering emerging threats and adversary tactics  \n- Understanding situational awareness and decision-making in real-time operations  \n\n### Reference:\n[FM 1-100: \"Army Aviation Operations\" (PDF). Headquarters, Department of the Army. 21 February 1997. Archived from the original (PDF) on 30 January 2023.](https://web.archive.org/web/20230317152129/https://irp.fas.org/doddir/army/fm3-04.pdf)"],"course_names_slides":["Introduction","Core Competencies of Army Aviation","Integration of Aviation with Ground Forces","Operational Environment"],"videos_links":["<div style='padding:56.25% 0 0 0;position:relative;'><iframe src='https://player.vimeo.com/video/1031959165?badge=0&amp;autopause=0&amp;player_id=0&amp;app_id=58479' frameborder='0' allow='autoplay; fullscreen; picture-in-picture; clipboard-write' style='position:absolute;top:0;left:0;width:100%;height:100%;' title='SECTION I  OVERVIEW'></iframe></div><script src='https://player.vimeo.com/api/player.js'></script>","<div style='padding:56.25% 0 0 0;position:relative;'><iframe src='https://player.vimeo.com/video/1031959175?badge=0&amp;autopause=0&amp;player_id=0&amp;app_id=58479' frameborder='0' allow='autoplay; fullscreen; picture-in-picture; clipboard-write' style='position:absolute;top:0;left:0;width:100%;height:100%;' title='SECTION II  CORE COMPETENCIES OF ARMY AVIATION'></iframe></div><script src='https://player.vimeo.com/api/player.js'></script>","<div style='padding:56.25% 0 0 0;position:relative;'><iframe src='https://player.vimeo.com/video/1031959211?badge=0&amp;autopause=0&amp;player_id=0&amp;app_id=58479' frameborder='0' allow='autoplay; fullscreen; picture-in-picture; clipboard-write' style='position:absolute;top:0;left:0;width:100%;height:100%;' title='SECTION III  ARMY AVIATION IN THE OPERATIONAL FRAMEWORK'></iframe></div><script src='https://player.vimeo.com/api/player.js'></script>","<div style='padding:56.25% 0 0 0;position:relative;'><iframe src='https://player.vimeo.com/video/1031959229?badge=0&amp;autopause=0&amp;player_id=0&amp;app_id=58479' frameborder='0' allow='autoplay; fullscreen; picture-in-picture; clipboard-write' style='position:absolute;top:0;left:0;width:100%;height:100%;' title='SECTION IV  OPERATIONAL ENVIRONMENT'></iframe></div><script src='https://player.vimeo.com/api/player.js'></script>"],"contact_form_link":"https://docs.google.com/forms/d/e/1FAIpQLSfWkOK-in_bMMoHSZfcIvAeO58PAH9wrDqcxnJABHaxiDqhSA/viewform?usp=sf_link","has_chatbot":false,"has_quiz":false,"disclaimer":""}
+
+"""
+# Only courses will be able to be published
+1. Get the course if it is already published
+2. Get the modules ready for publishing from the queue. Do not delete them from the queue. 
+3. Get the artifacts for publishing the modules.
+4. append the artifacts to the appropriate fields
+5. update Mongodb with the changes.
+"""
+
+from PIL import Image, ImageDraw, ImageFont
+from utils.mongodb_client import AtlasClient
+from bson import ObjectId
+import logging
+from textwrap import wrap
+import os
+from utils.s3_file_manager import S3FileManager
 
 course_object = {
     "app_name": "",
@@ -44,19 +59,125 @@ course_object = {
 }
 
 
-"""
-# Only courses will be able to be published
-1. Get the course if it is already published
-2. Get the modules ready for publishing from the queue. Do not delete them from the queue. 
-3. Get the artifacts for publishing the modules.
-4. append the artifacts to the appropriate fields
-5. update Mongodb with the changes.
-"""
+def _update_modules(course_id, course):
+    mongo_client = AtlasClient()
+    course_design = mongo_client.find("course_design", filter={"_id": ObjectId(course_id)})
+    modules = mongo_client.find("publishing_queue", filter={"course_id": ObjectId(course_id)})
 
-from utils.mongodb_client import AtlasClient
-from bson import ObjectId
-import logging
+    slide_links = []
+    slide_names = []
+    video_links = []
+    module_ids = []
+    course_module_information = []
 
+    for module in modules:
+        module_id = module["module_id"]
+        module_ids.append(module_id)
+        module_obj = next((m for m in course_design.get("modules", []) if m.get("module_id") == ObjectId(module_id)), None)
+        slide_names.append(module_obj["module_name"])
+
+        for resource in module_obj['post_processed_deliverables']:
+            if resource['resource_type'] == "Slide_Generated":
+                slide_link = resource['resource_link']
+                slide_links.append(slide_link)
+            elif resource['resource_type'] == "Video":
+                video_link = resource['resource_link']
+                video_links.append(
+                    f"""
+                    <div style='padding:56.25% 0 0 0;position:relative;'><iframe src='{video_link}?badge=0&amp;autopause=0&amp;player_id=0&amp;app_id=58479' frameborder='0' allow='autoplay; fullscreen; picture-in-picture; clipboard-write' style='position:absolute;top:0;left:0;width:100%;height:100%;' title='{module_obj["module_name"]}'></iframe></div><script src='https://player.vimeo.com/api/player.js'></script>
+                    """
+                )
+            elif resource['resource_type'] == "Note":
+                notes_link = resource['resource_link']
+                with open(notes_link, "r") as f:
+                    course_module_information.append(f.read())
+    
+    course["slides_links"] = slide_links
+    course["course_names_slides"] = slide_names
+    course["videos_links"] = video_links
+    course["module_ids"] = module_ids
+    course["course_module_information"] = course_module_information
+    course["course_names_videos"] = slide_names
+
+    
+    for module in modules:
+        module_id = module["module_id"]
+        for index, module_obj in enumerate(course_design.get("modules", [])):
+            if module_obj.get("module_id") == ObjectId(module_id):
+                course_design["modules"][index]["status"] = "Published"
+                break
+    
+    
+    mongo_client.update("course_design", filter={"_id": ObjectId(course_id)}, update=course_design)
+    mongo_client.update("course_design", filter={"_id": ObjectId(course_id)}, update={"$set": {"status": "Published"}})
+
+    return course
+
+def _create_certificate(module_id, course_name):
+    certificate = Image.open(open("./assets/QU-Certificate.jpg", "rb"))
+
+    # Create an ImageDraw object to write on the image
+    draw = ImageDraw.Draw(certificate)
+
+    # Font settings (bold fonts)
+    font_path_bold = "./assets/ArialBold.ttf"  # Replace with the path to a valid bold .ttf font file
+    font_size_title = 40  # Font size for the title
+    font_size_message = 20  # Font size for the message
+    font_title = ImageFont.truetype(font_path_bold, font_size_title)
+    font_message = ImageFont.truetype(font_path_bold, font_size_message)
+
+    # Text to be added to the certificate
+    title_text = course_name
+    message_text = f"is hereby recognized to have completed QuantUniversity's {course_name} Course."
+
+    # Wrapping helper function
+    def draw_wrapped_text(draw, text, font, position, max_width, fill, align="left", line_spacing=10):
+        """Draw wrapped text with specified alignment."""
+        lines = []
+        for line in text.split("\n"):  # Preserve existing line breaks
+            lines.extend(wrap(line, width=max_width // font.getbbox("A")[2]))
+        
+        y_offset = 0
+        for line in lines:
+            line_width = font.getbbox(line)[2]
+            if align == "center":
+                x_start = position[0] - line_width // 2  # Center-align horizontally
+            elif align == "left":
+                x_start = position[0]  # Left-aligned
+            else:
+                x_start = position[0] - line_width  # Right-aligned
+            draw.text((x_start, position[1] + y_offset), line, font=font, fill=fill)
+            y_offset += font.getbbox(line)[3] - font.getbbox(line)[1] + line_spacing
+
+    # Certificate dimensions
+    image_width, image_height = certificate.size
+
+    # Title text position and wrapping
+    title_position = (image_width // 2, 180)  # Centered horizontally
+    max_width_title = certificate.size[0] + 200  # Leave some margin
+    draw_wrapped_text(draw, title_text, font_title, title_position, max_width_title, (255, 255, 255), align="center", line_spacing=15)
+
+    # Message text position and wrapping
+    text_position_date = (50, 420)  # Left-aligned with a margin
+    max_width_message = certificate.size[0] + 200  # Leave some margin
+    draw_wrapped_text(draw, message_text, font_message, text_position_date, max_width_message, (0, 0, 0), align="left", line_spacing=10)
+
+    # Save the modified image
+    output_path = f'output/{module_id}/quiz_certificate.jpg'
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    certificate.save(output_path)
+
+    key = f"https://qucoursify.s3.us-east-1.amazonaws.com/qu-course-design/{module_id}/quiz_certificate.jpg"
+    s3_client = S3FileManager()
+    s3_client.upload_file(output_path, key)
+
+    # # erase the local file
+    # os.remove(output_path)
+    
+    return key
+
+    # base64_data = base64.b64encode(
+    #     open(output_path, "rb").read()).decode('utf-8')
 
 def handle_update_course(course_id):
     """
@@ -72,7 +193,8 @@ def handle_update_course(course_id):
         mongo_client = AtlasClient()
         course = mongo_client.find("courses", filter={"course_id": ObjectId(course_id)})
         if not course:
-            return "Course not found"
+            handle_create_course(course_id)
+            return None
         
         course = course[0]
 
@@ -82,57 +204,21 @@ def handle_update_course(course_id):
         
         course_design = course_design[0]
 
-        modules = mongo_client.find("publishing_queue", filter={"course_id": ObjectId(course_id)})
-
-        slide_links = []
-        slide_names = []
-        video_links = []
-        module_ids = []
-        course_module_information = []
-
-        for module in modules:
-            module_id = module["module_id"]
-            module_ids.append(module_id)
-            module_obj = next((m for m in course_design.get("modules", []) if m.get("module_id") == ObjectId(module_id)), None)
-            slide_names.append(module_obj["module_name"])
-
-            for resource in module_obj['post_processed_deliverables']:
-                if resource['resource_type'] == "Slide_Generated":
-                    slide_link = resource['resource_link']
-                    slide_links.append(slide_link)
-                elif resource['resource_type'] == "Video":
-                    video_link = resource['resource_link']
-                    video_links.append(video_link)
-                elif resource['resource_type'] == "Note":
-                    notes_link = resource['resource_link']
-                    with open(notes_link, "r") as f:
-                        course_module_information.append(f.read())
+        course = _update_modules(course_id, course)
         
-        course["slides_links"] = slide_links
-        course["course_names_slides"] = slide_names
-        course["videos_links"] = video_links
-        course["module_ids"] = module_ids
-        course["course_module_information"] = course_module_information
-        course["course_names_videos"] = slide_names
-
         mongo_client.update("courses", filter={"course_id": ObjectId(course_id)}, update=course)
-        
-        for module in modules:
-            module_id = module["module_id"]
-            for index, module_obj in enumerate(course_design.get("modules", [])):
-                if module_obj.get("module_id") == ObjectId(module_id):
-                    course_design["modules"][index]["status"] = "Published"
-                    break
-        
-        
-        mongo_client.update("course_design", filter={"_id": ObjectId(course_id)}, update=course_design)
-        mongo_client.update("course_design", filter={"_id": ObjectId(course_id)}, update={"$set": {"status": "Published"}})
 
 
+        # TODO: merge the assessments to create a final assessment
+        # TODO: get and merge the chatbot
+
+        
+        return True
+    
     except Exception as e:
         logging.error(f"Error in updating course: {e}")
 
-    
+   
 def handle_create_course(course_id):
     """
     Steps: 
@@ -142,8 +228,33 @@ def handle_create_course(course_id):
     For all the modules in the publishing queue, update the course objects
     Insert the course object in the courses collection
     Update the course design with the status for the published courses in the course_design collection
-
     """
+    try:
+        mongo_client = AtlasClient()
+        course = course_object
+        course["course_id"] = ObjectId(course_id)
+
+        certificate_path = _create_certificate()
+
+        course["certificate_path"] = certificate_path
+
+        course_design = mongo_client.find("course_design", filter={"_id": ObjectId(course_id)})
+        if not course_design:
+            return "Course design not found"
+        
+        course["app_image_location"] = course_design["course_image"]
+        course["short_description"] = course_design["course_description"]
+        course["home_page_introduction"] = course_design["course_description"]
+        
+
+        course = _update_modules(course_id, course)
+
+        mongo_client.insert("courses", course)
+        
+        return True
+    
+    except Exception as e:
+        logging.error(f"Error in creating course: {e}")
 
 
 def publish_course(course_id):
