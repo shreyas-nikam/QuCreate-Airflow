@@ -45,7 +45,7 @@ def watch_collection(collection_name, dag_id):
     db = client[DATABASE_NAME]
     collection = db[collection_name]
 
-    print(f"Watching MongoDB collection '{collection_name}' for new entries...")
+    print(f"Watching MongoDB collection '{collection_name}' for new entries.")
 
     with collection.watch() as stream:
         for change in stream:

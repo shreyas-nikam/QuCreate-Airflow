@@ -1,3 +1,4 @@
+import logging
 from typing import List
 import nest_asyncio
 import llama_index.core
@@ -85,7 +86,8 @@ def get_text_nodes(json_dicts, image_dir=None):
 
     return nodes
 
-def parse_files(module_id, file_paths, download_path):
+def parse_files(module_id, file_path, download_path):
+    file_paths = [file_path for file_path in Path(file_path).iterdir()]
     md_json_objs = parser.get_json_result(file_path=file_paths)
     md_json_list = md_json_objs[0]["pages"]
 
@@ -112,6 +114,8 @@ def load_index(module_id):
     index = load_index_from_storage(storage_context, index_id=module_id)
     return index
 
+
+
 def _generate_outline(module_id, instructions):
     index = load_index(module_id)
     query_engine = index.as_query_engine(
@@ -122,11 +126,13 @@ def _generate_outline(module_id, instructions):
 
     prompt = PromptHandler().get_prompt("GET_OUTLINE_PROMPT")
 
+    logging.info("Prompt for outline generation", prompt+instructions)
+
     response = query_engine.query(
         prompt+instructions
     )
 
-    print(response)
+    logging.info("Response for outline generation", response)
 
     return response.response
 
@@ -183,6 +189,7 @@ def get_slides(module_id, outline):
     )
 
     sections = _break_outline(outline)
+    logging.info("Sections after breaking the outline", sections)
 
     prompt = PromptHandler().get_prompt("GET_SLIDE_PROMPT")
 
@@ -190,6 +197,7 @@ def get_slides(module_id, outline):
 
     for section in sections:
         response = query_engine.query(prompt + section)
+        logging.info("Reponse for slide generation", response)
         slides.append({
             "slide_header": response.response.slide_header,
             "slide_content": response.response.slide_content,
@@ -214,5 +222,8 @@ def get_module_information(module_id):
     prompt = PromptHandler().get_prompt("CONTENT_TO_SUMMARY_PROMPT")
 
     response = query_engine.query(prompt)
+
+    logging.info("Prompt for module information generation", prompt)
+    logging.info("Response for module information generation", response)
 
     return response.response

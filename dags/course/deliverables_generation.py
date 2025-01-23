@@ -48,16 +48,23 @@ def _get_course_and_module(course_id, module_id):
         logging.error(f"Error in getting course and module: {e}")
 
 
-def _get_resource_link(module):
+def _get_resources_link(module):
     """
     Get the slide content from the module
     """
     try:
+        content_link, slide_link = None, None
+        for obj in module["pre_processed_structure"]:
+            if obj["resource_type"] == "Slide_Generated":
+                slide_link = obj["resource_link"]
+        
         for obj in module["pre_processed_content"]:
             if obj["resource_type"] == "Slide_Content":
-                return obj["resource_link"]
+                content_link = obj["resource_link"]
+
+        logging.info(f"Slide link: {slide_link}, Content link: {content_link}")
         
-        return None
+        return slide_link, content_link
     
     except Exception as e:
         logging.error(f"Error in getting slide content: {e}")
@@ -69,7 +76,9 @@ def _download_slide(slide_link, download_path):
     """
     try:
         s3_client = S3FileManager()
-        s3_client.download_file(slide_link, download_path)
+        slide_key = slide_link.split("/")[3]
+        slide_name = slide_key.split("/")[-1]
+        s3_client.download_file(slide_key, download_path+"/"+slide_name)
         return download_path
     except Exception as e:
         logging.error(f"Error in downloading slide: {e}")
@@ -81,7 +90,8 @@ def _get_slide_content(slide_link):
     """
     try:
         s3_client = S3FileManager()
-        slide_content = json.loads(s3_client.get_object(slide_link))
+        slide_key = slide_link.split("/")[3]
+        slide_content = json.loads(s3_client.get_object(slide_key))
         return slide_content
     except Exception as e:
         logging.error(f"Error in getting slide content: {e}")
@@ -130,7 +140,7 @@ def _create_images(file_path, module_id):
 
 
     # Convert pdf to images
-    source_file = Path(file_path)
+    source_file = Path(file_path.replace(".pptx", ".pdf"))
     target_folder = Path(f"{Path(OUTPUT_PATH)}/{module_id}/images")
     Path(target_folder).mkdir(parents=True, exist_ok=True)
 
@@ -145,8 +155,8 @@ def _create_images(file_path, module_id):
         doc.close()
 
 
-# CHECK
-def _get_audio(module_id, text, filename):
+
+def _get_audio(module_id, text, filename, voice_name):
     OUTPUT_PATH = "output"
 
     service_region = os.getenv("AZURE_TTS_SERVICE_REGION")
@@ -155,11 +165,17 @@ def _get_audio(module_id, text, filename):
 
     speech_config = speechsdk.SpeechConfig(subscription=speech_key, region=service_region)
     speech_config.speech_synthesis_language = "en-US"
-    speech_config.speech_synthesis_voice_name = "en-US-AvaNeural"
+
+    voice_name_map = {
+        "Female US": "en-US-AvaNeural",
+        "Male US": "en-US-AndrewNeural",
+        "Make UK": "en-GB-RyanNeural",
+        "Female UK": "en-GB-AdaMultilingualNeural"
+    }
+    speech_config.speech_synthesis_voice_name = voice_name_map[voice_name]
 
 
     filepath = Path(f"{OUTPUT_PATH}/{module_id}/audio")
-    # Get the audio from the text
 
 
     # Create the folder if it does not exist
@@ -208,7 +224,7 @@ def _get_audio(module_id, text, filename):
             print("Did you update the subscription info?")
 
 
-def _create_audio(module_id, transcript):
+def _create_audio(module_id, transcript, voice_name):
     # Create the audio
     OUTPUT_PATH = "output"
     audio_folder = Path(f"{Path(OUTPUT_PATH)}/{module_id}/audio")
@@ -216,10 +232,10 @@ def _create_audio(module_id, transcript):
 
 
     # Iterate over the speaker notes for each .txt file
-    for index, notes in enumerate(transcript):
+    for index, speaker_notes in enumerate(transcript):
 
         # Get the audio
-        _get_audio(module_id, notes, f"audio_{index+1}.wav")
+        _get_audio(module_id, speaker_notes, f"audio_{index+1}.wav", voice_name)
 
 
 def _stitch_videos(module_id, updation_map):
@@ -228,8 +244,7 @@ def _stitch_videos(module_id, updation_map):
     clips = [VideoFileClip(video_file) for video_file in video_files]
     final_clip = concatenate_videoclips(clips, method="compose")
     Path(f"{OUTPUT_PATH}/{module_id}").mkdir(parents=True, exist_ok=True)
-    final_clip.write_videofile(
-        str(Path(f"{OUTPUT_PATH}/{module_id}/{module_id}.mp4")), fps=10)
+    final_clip.write_videofile(str(Path(f"{OUTPUT_PATH}/{module_id}/{module_id}.mp4")), fps=10)
 
 
 def _get_questions(module_content, num_questions=10):
@@ -287,7 +302,7 @@ def _add_silence_to_audio(module_id, audio_file_name):
 def _create_video_parallel(module_id, slide_number, image):
     OUTPUT_PATH = "output"
     audio_folder = Path(f"{OUTPUT_PATH}/{module_id}/audio")
-    video_folder = OUTPUT_PATH / f"{module_id}/video"
+    video_folder = Path(f"{OUTPUT_PATH}/{module_id}/video")
     img_clip = ImageClip(image)
 
 
@@ -295,8 +310,8 @@ def _create_video_parallel(module_id, slide_number, image):
     _add_silence_to_audio(module_id, f"audio_{slide_number+1}.wav")
 
 
-    audio_file_path = Path(
-        f"{audio_folder}/audio_with_silence_{slide_number+1}.wav")
+    audio_file_path = Path(f"{audio_folder}/audio_with_silence_{slide_number+1}.wav")
+    
     audio_file = AudioFileClip(str(audio_file_path))
 
 
@@ -309,8 +324,10 @@ def _create_video_parallel(module_id, slide_number, image):
 
 
     img_clip = img_clip.subclip(0, audio_file.duration)
-    img_clip.write_videofile(str(Path(
-        f"{video_folder}/slide_{slide_number+1}.mp4")), fps=10, verbose=False, logger=None)
+    img_clip.write_videofile(str(Path(f"{video_folder}/slide_{slide_number+1}.mp4")), 
+                             fps=10, 
+                             verbose=False, 
+                             logger=None)
     return slide_number+1, str(Path(f"{video_folder}/slide_{slide_number+1}.mp4"))
 
 
@@ -325,8 +342,7 @@ def _create_videos(module_id):
     # Get the sorted images
     search_dir = image_folder
     files = os.listdir(search_dir)
-    files = [os.path.join(search_dir, f)
-             for f in files]  # add path to each file
+    files = [os.path.join(search_dir, f) for f in files]  # add path to each file
     files.sort(key=lambda x: os.path.getmtime(x))
 
 
@@ -345,10 +361,10 @@ def _create_videos(module_id):
 
     _stitch_videos(module_id, updation_map)
 
-def _generate_video(slide_path, module_id):
+def _generate_video(slide_path, module_id, voice_name):
     transcript = _get_transcript_from_ppt(slide_path)
     _create_images(slide_path, module_id)
-    _create_audio(module_id, transcript)
+    _create_audio(module_id, transcript, voice_name)
     _create_videos(module_id)
 
 
@@ -379,7 +395,7 @@ def _generate_chatbot(slide_content, destination):
     retriever.create_vector_store(slide_content, db_path=destination)
 
 
-async def upload_files(video_path, assessment_path, chatbot_path, module_id, resource_link):
+async def upload_files(video_path, assessment_path, chatbot_path, module_id, resource_link, has_assessment, has_chatbot):
     """
     Upload the video, assessment file, chatbot to s3
     """
@@ -387,27 +403,38 @@ async def upload_files(video_path, assessment_path, chatbot_path, module_id, res
         s3_client = S3FileManager()
         key = resource_link.split("/")[-1]
         video_key = resource_link.replace(key, f"{module_id}.mp4")
+        video_key = video_key.split("/")[3]
         await s3_client.upload_file(video_path, video_key)
-        video_link = video_key
+        video_link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+video_key
 
-        assessment_key = resource_link.replace(key, f"{module_id}_assessment.json")
-        await s3_client.upload_file(assessment_path, assessment_key)
-        assessment_link = assessment_key
+        if has_assessment:
+            assessment_key = resource_link.replace(key, f"{module_id}_assessment.json")
+            assessment_key = assessment_key.split("/")[3]
+            await s3_client.upload_file(assessment_path, assessment_key)
+            assessment_link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+assessment_key
+        else:
+            assessment_link = ""
 
-        for file in os.listdir(chatbot_path):
-            if "retriever" in file:
-                # create the key properly by replacing the resource link's key with the new file's key starting from retriever
-                chatbot_key = resource_link.replace(key, "retriever"+file.split("retriever")[1])
-                s3_client.upload_file(file, chatbot_key)
+        if has_chatbot:
 
-        chatbot_link = chatbot_key.split("retriever")[0] + "retriever"
+            for file in os.listdir(chatbot_path):
+                if "retriever" in file:
+                    chatbot_key = resource_link.replace(key, "retriever"+file.split("retriever")[1])
+                    chatbot_key = chatbot_key.split("/")[3]
+                    s3_client.upload_file(file, chatbot_key)
+
+            chatbot_link = resource_link.replace(key, "retriever")
+
+        else:
+            chatbot_link = ""
+
         return video_link, assessment_link, chatbot_link
     
     except Exception as e:
         logging.error(f"Error in uploading files: {e}")
         return None, None, None
     
-def update_module_with_deliverables(module, video_link, assessment_link, chatbot_link, module_id, course, course_id):
+def update_module_with_deliverables(module, video_link, assessment_link, chatbot_link, module_id, course, course_id, has_chatbot, has_assessment):
     """
     Update the module with the video, assessment, chatbot links in pre_processed_deliverables
     """
@@ -420,25 +447,25 @@ def update_module_with_deliverables(module, video_link, assessment_link, chatbot
                 "resource_description": "Video generated from the slide content",
                 "resource_id": ObjectId()
             },
-            {
+        ]
+
+        if has_assessment:
+            module["pre_processed_deliverables"].append({
                 "resource_type": "Assessment",
                 "resource_link": assessment_link,
                 "resource_name": f"{module_id}_assessment.json",
                 "resource_description": "Assessment generated from the slide content",
                 "resource_id": ObjectId()
-            },
-        ]
+            })
 
-        for index in range(len(course["modules"])):
-            if course["modules"][index]["module_id"] == module_id:
-                course["modules"][index] = module
-                break
+        if has_chatbot:
+            module['chatbot_link'] = chatbot_link
+        
 
-        mongodb_client = AtlasClient()
-        mongodb_client.update("course_design", filter={"_id": ObjectId(course_id)}, update={"$set": {"modules": course["modules"]}})
-
+        course['modules'] = [module if m["module_id"] == module["module_id"] else m for m in course['modules']]
         course["status"] = "Deliverables Review"
-        mongodb_client.update("course_design", filter={"_id": ObjectId(course_id)}, update={"$set": {"status": "Deliverables Review"}})
+        mongodb_client = AtlasClient()
+        mongodb_client.update("course_design", filter={"_id": ObjectId(course_id)}, update=course)
         
     except Exception as e:
         logging.error(f"Error in updating module with deliverables: {e}")
@@ -457,7 +484,7 @@ async def process_deliverables_request(entry_id):
     9. Update the status of the course to Deliverables Review
     """
     mongodb_client = AtlasClient()
-    entry = mongodb_client.find("deliverables_generation_queue", filter={"_id": ObjectId(entry_id)})
+    entry = mongodb_client.find("in_deliverables_generation_queue", filter={"_id": ObjectId(entry_id)})
 
     if not entry:
         return False
@@ -465,15 +492,30 @@ async def process_deliverables_request(entry_id):
     entry = entry[0]
     course_id = entry["course_id"]
     module_id = entry["module_id"]
+    
+    voice_name = entry['voice_name']
+    has_assessment = entry['assessment']
+    has_chatbot = entry['chatbot']
 
     course, module = _get_course_and_module(course_id, module_id)
-    slide_link = _get_resource_link(module)
+    slide_link, content_link = _get_resources_link(module)
+
+    # download it and fetch the content
     downloaded_slide_path = _download_slide(slide_link, download_path=f"output/{module_id}")
-    slide_content = _get_slide_content(slide_link)
-    video_path = _generate_video(downloaded_slide_path, module_id)
-    _generate_assessment(slide_content)
+    slide_content = _get_slide_content(content_link)
+
+    # generate the video
+    video_path = _generate_video(downloaded_slide_path, module_id, voice_name)
+
+    if has_assessment:
+        assessment_path = _generate_assessment(slide_content)
     assessment_path = f"output/{module_id}/questions.json"
-    chatbot = _generate_chatbot(slide_content, destination=f"output/{module_id}")
-    video_link, assessment_link, chatbot_link = upload_files(video_path, assessment_path, chatbot, module_id, slide_link)
-    update_module_with_deliverables(module, video_link, assessment_link, chatbot_link, module_id, course, course_id)
+
+    if has_chatbot:
+        chatbot = _generate_chatbot(slide_content, destination=f"output/{module_id}")
+    
+    video_link, assessment_link, chatbot_link = upload_files(video_path, assessment_path, chatbot, module_id, slide_link, has_assessment, has_chatbot)
+
+    update_module_with_deliverables(module, video_link, assessment_link, chatbot_link, module_id, course, course_id, has_chatbot, has_assessment)
+
     return True

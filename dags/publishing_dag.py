@@ -25,8 +25,9 @@ with DAG(
     schedule_interval=None,  # Triggered externally
     catchup=False,
 ) as dag:
-    process_publishing_request_task = PythonOperator(
-        task_id='process_publishing_request',
-        python_callable=process_publishing_request,
-        provide_context=True,
-    )
+    pass
+    # process_publishing_request_task = PythonOperator(
+    #     task_id='process_publishing_request',
+    #     python_callable=process_publishing_request,
+    #     provide_context=True,
+    # )

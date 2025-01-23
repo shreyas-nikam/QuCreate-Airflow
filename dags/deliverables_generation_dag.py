@@ -25,8 +25,9 @@ with DAG(
     schedule_interval=None, 
     catchup=False,
 ) as dag:
-    deliverables_generation_task = PythonOperator(
-        task_id='deliverables_generation',
-        python_callable=deliverables_generation,
-        provide_context=True,
-    )
+    pass
+    # deliverables_generation_task = PythonOperator(
+    #     task_id='deliverables_generation',
+    #     python_callable=deliverables_generation,
+    #     provide_context=True,
+    # )

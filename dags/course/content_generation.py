@@ -20,7 +20,7 @@ from utils.mongodb_client import AtlasClient
 from utils.s3_file_manager import S3FileManager
 from bson.objectid import ObjectId
 import logging
-from helper import get_slides, get_module_information
+from course.helper import get_slides, get_module_information
 
 def fetch_outline(course_id, module_id):
     try:
@@ -29,14 +29,15 @@ def fetch_outline(course_id, module_id):
         # Get the course_design object
         course = mongodb_client.find("course_design", filter={"_id": ObjectId(course_id)})
         if not course:
-            return "Course not found", None
+            return "Course not found"
 
         course = course[0]
         module = next((m for m in course.get("modules", []) if m.get("module_id") == ObjectId(module_id)), None)
         if not module:
-            return None, "Module not found"
+            return "Module not found"
 
         return module.get("outline")
+    
     except Exception as e:
         logging.error(f"Error in getting course and module: {e}")
 
@@ -64,13 +65,19 @@ def generate_content(entry_id):
     entry = mongodb_client.find("in_content_generation_queue", filter={"_id": ObjectId(entry_id)})
     course_id = entry[0].get("course_id")
     module_id = entry[0].get("module_id")
+
     outline = fetch_outline(course_id, module_id)
-    slides = get_slides(outline)
+
+    if outline == "Course not found" or outline == "Module not found":
+        return outline
+    
+    slides = get_slides(module_id, outline)
+
     with open(f"output/{module_id}/slides.json", "w") as f:
         f.write(slides)
     
     # upload it to s3
-    key = f"https://qucoursify.s3.us-east-1.amazonaws.com/qu-course-design/{course_id}/{module_id}/pre_processed_content/slides.json"
+    key = f"qu-course-design/{course_id}/{module_id}/pre_processed_content/slides.json"
     s3_client = S3FileManager()
 
     s3_client.upload_file(f"output/{module_id}/slides.json", key)
@@ -78,8 +85,8 @@ def generate_content(entry_id):
     slide_resource = {
         "resource_type": "Slide_Content",
         "resource_name": "Slide Content",
-        "resource_description": "Slide Content generated using AI",
-        "resource_link": key,
+        "resource_description": "Slide content generated using AI",
+        "resource_link": "https://qucoursify.s3.us-east-1.amazonaws.com/"+key,
         "resource_id": ObjectId()
     }
 
@@ -92,18 +99,17 @@ def generate_content(entry_id):
     module["pre_processed_content"].append(slide_resource)
     
 
-
     with open(f"output/{module_id}/module_info.md", "w") as f:
         f.write(get_module_information(outline))
 
-    key = f"https://qucoursify.s3.us-east-1.amazonaws.com/qu-course-design/{course_id}/{module_id}/pre_processed_content/module_info.md"
+    key = f"qu-course-design/{course_id}/{module_id}/pre_processed_content/module_info.md"
     s3_client.upload_file(f"output/{module_id}/module_info.md", key)
 
     module_info_resource = {
         "resource_type": "Module_Information",
         "resource_name": "Module Information",
         "resource_description": "Module Information generated using AI",
-        "resource_link": key,
+        "resource_link": "https://qucoursify.s3.us-east-1.amazonaws.com/"+key,
         "resource_id": ObjectId()
     }
 

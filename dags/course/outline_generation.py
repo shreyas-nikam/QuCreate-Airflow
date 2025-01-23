@@ -15,7 +15,7 @@ from utils.s3_file_manager import S3FileManager
 from utils.mongodb_client import AtlasClient
 import logging
 from bson.objectid import ObjectId
-from helper import generate_outline
+from course.helper import generate_outline
 
 
 def _get_course_and_module(course_id, module_id):
@@ -45,6 +45,7 @@ def fetch_artifacts(course_id, module_id):
         course, module = _get_course_and_module(course_id, module_id)
         
         if not course or not module:
+            logging.error("Course or module not found")
             return None
         
         output_path = f"output/{module_id}"
@@ -53,7 +54,7 @@ def fetch_artifacts(course_id, module_id):
             s3 = S3FileManager()
             
             if resource['resource_type']=="File":
-                s3.download_file(resource['resource_link'])
+                s3.download_file(resource['resource_link'], f"{output_path}/{resource['resource_name']}")
         
         return output_path
     
@@ -72,7 +73,7 @@ def upload_outline(course_id, module_id, outline):
 
 async def process_outline(entry_id):
     mongodb_client = AtlasClient()
-    entry = mongodb_client.find("outline_generation_queue", filter={"_id": ObjectId(entry_id)})
+    entry = mongodb_client.find("in_outline_generation_queue", filter={"_id": ObjectId(entry_id)})
     if not entry:
         return "Entry not found"
     
@@ -84,6 +85,9 @@ async def process_outline(entry_id):
     # Fetch all the artifacts.
     artifacts_path = await fetch_artifacts(course_id, module_id)
     # Feed it as files to the assistants api.
+    # artifacts_path is output/module_id
     outline = await generate_outline(artifacts_path, module_id, instructions)
     # Upload the outline on the mongodb.
     await upload_outline(course_id, module_id, outline)
+
+    return True

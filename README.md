@@ -39,3 +39,7 @@ Steps to run the DAG
 
 
 
+For deploying:
+1. pip freeze > requirements.txt
+
+

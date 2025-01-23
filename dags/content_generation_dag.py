@@ -25,8 +25,9 @@ with DAG(
     schedule_interval=None,  # Triggered externally
     catchup=False,
 ) as dag:
-    content_generation_task = PythonOperator(
-        task_id='content_generation',
-        python_callable=content_generation,
-        provide_context=True,
-    )
+    pass
+    # content_generation_task = PythonOperator(
+    #     task_id='content_generation',
+    #     python_callable=content_generation,
+    #     provide_context=True,
+    # )

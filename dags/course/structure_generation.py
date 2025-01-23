@@ -38,7 +38,7 @@ def _get_course_and_module(course_id, module_id):
 
 def _get_resource_link(module):
     """
-    Get the slide content from the module
+    Get the slide content resource link
     """
     try:
         for obj in module["pre_processed_content"]:
@@ -74,31 +74,32 @@ def _extract_content(slide_content):
         return None, None
 
 
-def _generate_pptx(markdown):
+def _generate_pptx(markdown, module_id):
     """
     Generate the pptx file using the markdown content
     """
     try:
         # write the file in a temp location
-        with open("/tmp/content.md", "w") as f:
+        with open(f"output/{module_id}/content.md", "w") as f:
             f.write(markdown)
         
-        md_file_path = Path("/tmp/content.md")
-        output_ppt_path = Path("/tmp/content.pptx")
+        md_file_path = Path(f"output/{module_id}/content.md")
+        output_ppt_path = Path(f"output/{module_id}/content.pptx")
 
-        # Generate the pptx file in a temp location
+        # Generate the pptx file
         os.system(f'python md2pptx/md2pptx.py "{str(output_ppt_path.absolute())}" < "{str(md_file_path.absolute())}"')
 
-        return "/tmp/content.pptx"
+        return f"output/{module_id}/content.pptx"
     
     except Exception as e:
         logging.error(f"Error in generating pptx: {e}")
         return None
     
 
-def _format_ppt(output_ppt_path, speaker_notes,
-               logo_path="assets/logo.jpg",
-               header='assets/top.png'):
+def _format_ppt(output_ppt_path, 
+                speaker_notes,
+                logo_path="dags/course/assets/logo.jpg",
+                header='dags/course/assets/top.png'):
 
     Path(output_ppt_path).parent.mkdir(parents=True, exist_ok=True)
 
@@ -172,24 +173,24 @@ def _format_ppt(output_ppt_path, speaker_notes,
     prs.save(output_ppt_path)
 
 
-def _add_transcript_to_pptx(pptx_file, transcript):
+def _add_transcript_to_pptx(pptx_file_path, transcript):
     try:
-        _format_ppt(pptx_file, transcript)
-        return pptx_file
+        _format_ppt(pptx_file_path, transcript)
+        return pptx_file_path
     except Exception as e:
         logging.error(f"Error in adding transcript to pptx: {e}")
         return None
 
 
-async def _save_file_to_s3(pptx_file, key):
+async def _save_file_to_s3(pptx_file_path, resource_link):
     try:
         s3_client = S3FileManager()
+        key = resource_link.split("/")[3]
         key = key.replace("pre_processed_content", "pre_processed_structure")
         key = key.replace("Slide_Content.json", "Slide_Generated.pptx")
-        await s3_client.upload_file(pptx_file, key)
-        # delete the temp file
-        os.remove(pptx_file)
-        return key
+        await s3_client.upload_file(pptx_file_path, key)
+        resource_link = f"https://qucoursify.s3.us-east-1.amazonaws.com/{key}"
+        return resource_link
     except Exception as e:
         logging.error(f"Error in saving file to s3: {e}")
         return None
@@ -215,12 +216,15 @@ def _update_slide_entry(course_id, course, module, resource_link):
 
         # add the other resources to the module except for the Slide_Content
         for obj in module["pre_processed_content"]:
-            if obj["resource_type"] != "Slide_Content":
+            if obj["resource_type"] != "Slide_Content" or obj['resource_type']!="Link":
                 # copy the object to the new s3 location
                 prev_location = obj["resource_link"]
                 new_location = prev_location.replace("pre_processed_content", "pre_processed_structure")
-                
-                s3_client.copy_file(prev_location, new_location)
+
+                prev_location_key = prev_location.split("/")[3]
+                new_location_key = new_location.split("/")[3]
+            
+                s3_client.copy_file(prev_location_key, new_location_key)
 
                 resource = {
                     "resource_link": new_location,
@@ -231,13 +235,14 @@ def _update_slide_entry(course_id, course, module, resource_link):
                 }
                 module["pre_processed_structure"].append(resource)
 
-        for i in range(len(course["modules"])):
-            if course["modules"][i]["module_id"] == module["module_id"]:
-                course["modules"][i] = module
+        # Check: might break
+        course["modules"] = [module if m["module_id"] == module["module_id"] else m for m in course["modules"]]
+        logging.info("Updated the course object with the new slide content")
+        logging.info(f"Updated course: {course}")
         
-        course["status"] = "Content Review"
+        course["status"] = "Structure Review"
         
-        mongodb_client.update("course_design", filter={"_id": ObjectId(course_id)}, update={"$set": {"modules": course["modules"]}})
+        mongodb_client.update("course_design", filter={"_id": ObjectId(course_id)}, update=course)
 
         return True
     
@@ -255,23 +260,24 @@ async def process_structure_request(entry_id):
     5. Extract the transcript from the jso
     """
     mongodb_client = AtlasClient()
-    entry = mongodb_client.find("structure_generation_queue", filter={"_id": ObjectId(entry_id)})
+    entry = mongodb_client.find("in_structure_generation_queue", filter={"_id": ObjectId(entry_id)})
     if not entry:
         return "Entry not found"
     entry = entry[0]
     course_id = entry["course_id"]
     module_id = entry["module_id"]
+
     course, module = _get_course_and_module(course_id, module_id)
-    slide_content = _get_resource_link(module)
-    markdown, transcript = _extract_content(slide_content)
-    pptx_file = _generate_pptx(markdown)
-    pptx_file_with_transcript = _add_transcript_to_pptx(pptx_file, transcript)
-    resource_link = await _save_file_to_s3(pptx_file_with_transcript, resource_link)
-    updated_slide = _update_slide_entry(course_id, course, module, resource_link)
-
-
-
+    slide_content_link = _get_resource_link(module)
+    if slide_content_link is None:
+        return "Slide Content is not Generated. Please generate the slide content first."
     
+    slide_content_key = slide_content_link.split("/")[3]
+    markdown, transcript = _extract_content(slide_content_key)
 
+    pptx_file_path = _generate_pptx(markdown, module_id)
 
-
+    pptx_file_path_with_transcript = _add_transcript_to_pptx(pptx_file_path, transcript)
+    resource_link = await _save_file_to_s3(pptx_file_path_with_transcript, resource_link)
+    updated_slide = _update_slide_entry(course_id, course, module, resource_link)
+    return True

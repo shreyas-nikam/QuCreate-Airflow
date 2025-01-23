@@ -25,8 +25,9 @@ with DAG(
     schedule_interval=None,  # Triggered externally
     catchup=False,
 ) as dag:
-    process_structure_generation_request_task = PythonOperator(
-        task_id='process_structure_generation_request',
-        python_callable=process_structure_generation_request,
-        provide_context=True,
-    )
+    pass
+    # process_structure_generation_request_task = PythonOperator(
+    #     task_id='process_structure_generation_request',
+    #     python_callable=process_structure_generation_request,
+    #     provide_context=True,
+    # )

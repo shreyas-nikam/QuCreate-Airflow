@@ -106,6 +106,9 @@ def _update_modules(course_id, course):
             if module_obj.get("module_id") == ObjectId(module_id):
                 course_design["modules"][index]["status"] = "Published"
                 break
+
+    # TODO merge assessments
+    # TODO merge chatbots
     
     
     mongo_client.update("course_design", filter={"_id": ObjectId(course_id)}, update=course_design)
@@ -114,13 +117,13 @@ def _update_modules(course_id, course):
     return course
 
 def _create_certificate(module_id, course_name):
-    certificate = Image.open(open("./assets/QU-Certificate.jpg", "rb"))
+    certificate = Image.open(open("dags/course/assets/QU-Certificate.jpg", "rb"))
 
     # Create an ImageDraw object to write on the image
     draw = ImageDraw.Draw(certificate)
 
     # Font settings (bold fonts)
-    font_path_bold = "./assets/ArialBold.ttf"  # Replace with the path to a valid bold .ttf font file
+    font_path_bold = "dags/course/assets/ArialBold.ttf"  # Replace with the path to a valid bold .ttf font file
     font_size_title = 40  # Font size for the title
     font_size_message = 20  # Font size for the message
     font_title = ImageFont.truetype(font_path_bold, font_size_title)
@@ -167,17 +170,11 @@ def _create_certificate(module_id, course_name):
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     certificate.save(output_path)
 
-    key = f"https://qucoursify.s3.us-east-1.amazonaws.com/qu-course-design/{module_id}/quiz_certificate.jpg"
+    key = f"qu-course-design/{module_id}/quiz_certificate.jpg"
     s3_client = S3FileManager()
     s3_client.upload_file(output_path, key)
-
-    # # erase the local file
-    # os.remove(output_path)
     
-    return key
-
-    # base64_data = base64.b64encode(
-    #     open(output_path, "rb").read()).decode('utf-8')
+    return "https://qucoursify.s3.us-east-1.amazonaws.com/" + key
 
 def handle_update_course(course_id):
     """
@@ -207,10 +204,6 @@ def handle_update_course(course_id):
         course = _update_modules(course_id, course)
         
         mongo_client.update("courses", filter={"course_id": ObjectId(course_id)}, update=course)
-
-
-        # TODO: merge the assessments to create a final assessment
-        # TODO: get and merge the chatbot
 
         
         return True
@@ -245,7 +238,7 @@ def handle_create_course(course_id):
         course["app_image_location"] = course_design["course_image"]
         course["short_description"] = course_design["course_description"]
         course["home_page_introduction"] = course_design["course_description"]
-        
+     
 
         course = _update_modules(course_id, course)
 
