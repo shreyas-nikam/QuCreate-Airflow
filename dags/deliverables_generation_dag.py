@@ -2,12 +2,14 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.utils.dates import days_ago
 from course.deliverables_generation import process_deliverables_request
+import asyncio
 
 def deliverables_generation(**kwargs):
     entry_id = kwargs["dag_run"].conf.get("entry_id")
-    collection = kwargs["dag_run"].conf.get("collection")
+    collection = "in_deliverables_generation_queue"
     print(f"Processing entry with ID: {entry_id} from collection: {collection} for deliverables generation.")
-    process_deliverables_request(entry_id)
+    response = asyncio.run(process_deliverables_request(entry_id))
+    print(response)
 
 default_args = {
     'owner': 'airflow',

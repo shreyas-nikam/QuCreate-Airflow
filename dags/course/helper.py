@@ -1,5 +1,20 @@
+
+from typing import Any, List
+from llama_index.core.llms.function_calling import FunctionCallingLLM
+from llama_index.core.llms.structured_llm import StructuredLLM
+from llama_index.core.memory import ChatMemoryBuffer
+from llama_index.core.llms import ChatMessage
+from llama_index.core.tools.types import BaseTool
+from llama_index.core.tools import ToolSelection
+from llama_index.core.workflow import Workflow, StartEvent, StopEvent, Context, step
+from llama_index.core.query_engine import RetrieverQueryEngine
+from llama_index.core.response_synthesizers import CompactAndRefine
+from llama_index.core.workflow import Event
+from operator import itemgetter
+from llama_index.core.tools import FunctionTool
+from llama_index.core.schema import NodeWithScore
+import pickle
 import logging
-from typing import List
 import nest_asyncio
 import llama_index.core
 import os
@@ -14,6 +29,7 @@ from pathlib import Path
 from llama_index.core import (
     StorageContext,
     SummaryIndex,
+    VectorStoreIndex,
     load_index_from_storage,
 )
 from llama_index.llms.openai import OpenAI
@@ -40,7 +56,7 @@ llama_index.core.set_global_handler(
 )
 
 embed_model = OpenAIEmbedding(model="text-embedding-3-large")
-llm = OpenAI(model="gpt-4o")
+llm = OpenAI(model=os.getenv("OPENAI_MODEL"))
 
 Settings.embed_model = embed_model
 Settings.llm = llm
@@ -48,8 +64,10 @@ Settings.llm = llm
 parser = LlamaParse(
     result_type="markdown",
     use_vendor_multimodal_model=True,
-    vendor_multimodal_model_name="anthropic-sonnet-3.5",
+    vendor_multimodal_model_name="openai-gpt4o",
+    vendor_multimodal_model_key=OPENAI_KEY,
     api_key=LLAMAPARSE_API_KEY,
+    fast_mode=True,
 )
 
 def get_page_number(file_name):
@@ -70,10 +88,13 @@ def get_text_nodes(json_dicts, image_dir=None):
     nodes = []
 
     image_files = _get_sorted_image_files(image_dir) if image_dir is not None else None
-    md_texts = [d["md"] for d in json_dicts]
+    md_texts = [d["md"] if "md" in d else d["text"] for d in json_dicts]
 
     for idx, md_text in enumerate(md_texts):
-        chunk_metadata = {"page_num": idx + 1}
+        chunk_metadata = chunk_metadata = {
+            "page_num": idx + 1,
+            "parsed_text_markdown": md_text,
+        }
         if image_files is not None:
             image_file = image_files[idx]
             chunk_metadata["image_path"] = str(image_file)
@@ -88,58 +109,350 @@ def get_text_nodes(json_dicts, image_dir=None):
 
 def parse_files(module_id, file_path, download_path):
     file_paths = [file_path for file_path in Path(file_path).iterdir()]
-    md_json_objs = parser.get_json_result(file_path=file_paths)
-    md_json_list = md_json_objs[0]["pages"]
-
-    image_dir = download_path / index / "images"
-
-    image_dicts = parser.get_images(md_json_objs, download_path=image_dir)
-
-    text_nodes = get_text_nodes(md_json_list, image_dir=image_dir)
-
-    index = SummaryIndex(text_nodes)
-    index.set_index_id(module_id)
-        
-    return index
-
-def save_index(index: SummaryIndex, path):
-    index.storage_context.persist(persist_dir=path)
     
-def load_index(module_id):
+    file_dicts = {}
+
+    
+    for file_path in file_paths:
+        file_base = Path(file_path).stem
+        full_file_path = file_path
+        md_json_objs = parser.get_json_result(file_path)
+        json_dicts = md_json_objs[0]["pages"]
+
+        image_path = str(Path(download_path) / file_base)
+        image_dicts = parser.get_images(md_json_objs, download_path=image_path)
+        file_dicts[file_path] = {
+            "file_path": full_file_path,
+            "json_dicts": json_dicts,
+            "image_path": image_path,
+        }
+
+    all_text_nodes = []
+    text_nodes_dict = {}
+    for paper_path, paper_dict in file_dicts.items():
+        json_dicts = paper_dict["json_dicts"]
+        text_nodes = get_text_nodes(
+            json_dicts, paper_dict["paper_path"], image_dir=paper_dict["image_path"]
+        )
+        all_text_nodes.extend(text_nodes)
+        text_nodes_dict[paper_path] = text_nodes
+
+
+
+    output_pickle_path = Path("output") / module_id / "text_nodes_pickle.pkl"
+    pickle.dump(text_nodes_dict, open(output_pickle_path, "wb"))
+
+    vector_index = VectorStoreIndex(all_text_nodes)
+    vector_index.set_index_id(f"{module_id}_vector_index")
+        
+    return vector_index
+
+def save_index(vector_index: VectorStoreIndex, vector_index_path):
+    vector_index.storage_context.persist(persist_dir=vector_index_path)
+    
+def load_indexes(module_id):
     """
     The index_id here is going to be the module id
     """
-    path = Path("output") / module_id / "index"
+
+    text_nodes_dict = pickle.load(open(Path("output") / module_id / "text_nodes_pickle.pkl", "rb"))
+    
+    all_text_nodes = []
+    for paper_path, text_nodes in text_nodes_dict.items():
+        all_text_nodes.extend(text_nodes)
+
+    paper_summary_indexes = {
+        paper_path: SummaryIndex(text_nodes_dict[file_path]) for file_path, text_nodes in text_nodes_dict.items()
+    }
+
+    path = Path("output") / module_id / "vector_index"
     storage_context = StorageContext.from_defaults(persist_dir=path)
-    index = load_index_from_storage(storage_context, index_id=module_id)
-    return index
+    vector_index = load_index_from_storage(storage_context, index_id=module_id)
+
+    return vector_index, paper_summary_indexes
+
+
+# function tools
+def chunk_retriever_fn(query: str, vector_index) -> List[NodeWithScore]:
+    """Retrieves a small set of relevant document chunks from the corpus.
+
+    ONLY use for research questions that want to look up specific facts from the knowledge corpus,
+    and don't need entire documents.
+
+    """
+    retriever = vector_index.as_retriever(similarity_top_k=5)
+    nodes = retriever.retrieve(query)
+    return nodes
+
+
+def _get_document_nodes(
+    nodes: List[NodeWithScore], 
+    paper_summary_indexes: dict,
+    top_n: int = 2
+) -> List[NodeWithScore]:
+    """Get document nodes from a set of chunk nodes.
+
+    Given chunk nodes, "de-reference" into a set of documents, with a simple weighting function (cumulative total) to determine ordering.
+
+    Cutoff by top_n.
+
+    """
+    file_paths = {n.metadata["file_path"] for n in nodes}
+    file_path_scores = {f: 0 for f in file_paths}
+    for n in nodes:
+        file_path_scores[n.metadata["file_path"]] += n.score
+
+    # Sort file_path_scores by score in descending order
+    sorted_file_paths = sorted(
+        file_path_scores.items(), key=itemgetter(1), reverse=True
+    )
+    # Take top_n paper paths
+    top_file_paths = [path for path, score in sorted_file_paths[:top_n]]
+
+    # use summary index to get nodes from all paper paths
+    all_nodes = []
+    for file_path in top_file_paths:
+        # NOTE: input to retriever can be blank
+        all_nodes.extend(
+            paper_summary_indexes[Path(file_path).name].as_retriever().retrieve("")
+        )
+
+    return all_nodes
+
+def doc_retriever_fn(query: str, index, summary_indexes) -> float:
+    """Document retriever that retrieves entire documents from the corpus.
+
+    ONLY use for research questions that may require searching over entire research reports.
+
+    Will be slower and more expensive than chunk-level retrieval but may be necessary.
+    """
+    retriever = index.as_retriever(similarity_top_k=5)
+    nodes = retriever.retrieve(query)
+    return _get_document_nodes(nodes, summary_indexes)
 
 
 
-def _generate_outline(module_id, instructions):
-    index = load_index(module_id)
-    query_engine = index.as_query_engine(
-        similarity_top_k=10,
-        llm=llm,
-        response_mode="compact",
+class TextBlock(BaseModel):
+    """Text block."""
+
+    text: str = Field(..., description="The text for this block.")
+
+
+class ImageBlock(BaseModel):
+    """Image block."""
+
+    file_path: str = Field(..., description="File path to the image.")
+
+
+class OutlineOutput(BaseModel):
+    """Data model for a outline.
+
+    Can contain a mix of text and image blocks. in markdown format
+
+    """
+
+    blocks: List[TextBlock | ImageBlock] = Field(
+        ..., description="A list of text and image blocks."
     )
 
-    prompt = PromptHandler().get_prompt("GET_OUTLINE_PROMPT")
+class SlideOutput(BaseModel):
+    """Data model for a slide.
 
-    logging.info("Prompt for outline generation", prompt+instructions)
+    Contains slide header, slide_content and the speaker notes for the slide.
 
-    response = query_engine.query(
-        prompt+instructions
+    """
+
+    slide_header: str = Field(..., description="The header for the slide.")
+    slide_content: List[TextBlock] = Field(..., description="The content for the slide.")
+    speaker_notes: str = Field(..., description="The speaker notes for the slide.")
+
+class ModuleInformationOutput(BaseModel):
+    """Data model for module information.
+
+    Contains the module information.
+
+    """
+
+    module_information: str = Field(..., description="The module information.")
+
+prompt_handler = PromptHandler()
+outline_system_prompt = prompt_handler.get_prompt("GET_OUTLINE_PROMPT")
+slide_system_prompt = prompt_handler.get_prompt("GET_SLIDE_PROMPT")
+module_information_system_prompt = prompt_handler.get_prompt("CONTENT_TO_SUMMARY_PROMPT")
+
+outline_gen_llm = OpenAI(model=os.getenv("OPENAI_MODEL"), system_prompt=outline_system_prompt)
+slide_gen_llm = OpenAI(model=os.getenv("OPENAI_MODEL"), system_prompt=slide_system_prompt)
+module_information_gen_llm = OpenAI(model=os.getenv("OPENAI_MODEL"), system_prompt=module_information_system_prompt)
+
+outline_gen_sllm = llm.as_structured_llm(output_cls=OutlineOutput)
+slide_gen_sllm = llm.as_structured_llm(output_cls=SlideOutput)
+module_information_gen_sllm = llm.as_structured_llm(output_cls=ModuleInformationOutput)
+
+
+
+class InputEvent(Event):
+    input: List[ChatMessage]
+
+
+class ChunkRetrievalEvent(Event):
+    tool_call: ToolSelection
+
+
+class DocRetrievalEvent(Event):
+    tool_call: ToolSelection
+
+class OutputGenerationEvent(Event):
+    pass
+
+
+class OutputGenerationAgent(Workflow):
+    """Output generation agent."""
+
+    def __init__(
+        self,
+        chunk_retriever_tool: BaseTool,
+        doc_retriever_tool: BaseTool,
+        llm: FunctionCallingLLM | None = None,
+        sllm: StructuredLLM | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        self.chunk_retriever_tool = chunk_retriever_tool
+        self.doc_retriever_tool = doc_retriever_tool
+
+        self.llm = llm or OpenAI()
+        self.summarizer = CompactAndRefine(llm=self.llm)
+        assert self.llm.metadata.is_function_calling_model
+
+        self.sllm = sllm
+        self.output_gen_summarizer = CompactAndRefine(llm=self.sllm)
+
+        self.memory = ChatMemoryBuffer.from_defaults(llm=llm)
+        self.sources = []
+
+    @step(pass_context=True)
+    async def prepare_chat_history(self, ctx: Context, ev: StartEvent) -> InputEvent:
+        # clear sources
+        self.sources = []
+
+        ctx.data["stored_chunks"] = []
+        ctx.data["query"] = ev.input
+
+        # get user input
+        user_input = ev.input
+        user_msg = ChatMessage(role="user", content=user_input)
+        self.memory.put(user_msg)
+
+        # get chat history
+        chat_history = self.memory.get()
+        return InputEvent(input=chat_history)
+
+    @step(pass_context=True)
+    async def handle_llm_input(
+        self, ctx: Context, ev: InputEvent
+    ) -> ChunkRetrievalEvent | DocRetrievalEvent | OutputGenerationEvent | StopEvent:
+        chat_history = ev.input
+
+        response = await self.llm.achat_with_tools(
+            [self.chunk_retriever_tool, self.doc_retriever_tool],
+            chat_history=chat_history,
+        )
+        self.memory.put(response.message)
+
+        tool_calls = self.llm.get_tool_calls_from_response(
+            response, error_on_no_tool_call=False
+        )
+        if not tool_calls:
+            # all the content should be stored in the context, so just pass along input
+            return OutputGenerationEvent(input=ev.input)
+
+        for tool_call in tool_calls:
+            if tool_call.tool_name == self.chunk_retriever_tool.metadata.name:
+                return ChunkRetrievalEvent(tool_call=tool_call)
+            elif tool_call.tool_name == self.doc_retriever_tool.metadata.name:
+                return DocRetrievalEvent(tool_call=tool_call)
+            else:
+                return StopEvent(result={"response": "Invalid tool."})
+
+    @step(pass_context=True)
+    async def handle_retrieval(
+        self, ctx: Context, ev: ChunkRetrievalEvent | DocRetrievalEvent
+    ) -> InputEvent:
+        """Handle retrieval.
+
+        Store retrieved chunks, and go back to agent reasoning loop.
+
+        """
+        query = ev.tool_call.tool_kwargs["query"]
+        if isinstance(ev, ChunkRetrievalEvent):
+            retrieved_chunks = self.chunk_retriever_tool(query).raw_output
+        else:
+            retrieved_chunks = self.doc_retriever_tool(query).raw_output
+        ctx.data["stored_chunks"].extend(retrieved_chunks)
+
+        # synthesize an answer given the query to return to the LLM.
+        response = self.summarizer.synthesize(query, nodes=retrieved_chunks)
+        self.memory.put(
+            ChatMessage(
+                role="tool",
+                content=str(response),
+                additional_kwargs={
+                    "tool_call_id": ev.tool_call.tool_id,
+                    "name": ev.tool_call.tool_name,
+                },
+            )
+        )
+
+        # send input event back with updated chat history
+        return InputEvent(input=self.memory.get())
+
+    @step(pass_context=True)
+    async def generate_output(
+        self, ctx: Context, ev: OutputGenerationEvent
+    ) -> StopEvent:
+        """Generate output."""
+        # given all the context, generate query
+        response = self.output_gen_summarizer.synthesize(
+            ctx.data["query"], nodes=ctx.data["stored_chunks"]
+        )
+
+        return StopEvent(result={"response": response})
+
+
+
+
+async def _generate_outline(module_id, instructions):
+    logging.info("Loading index")
+    vector_index, summary_indexes = load_indexes(module_id)
+    logging.info("Index loaded")
+    
+    logging.info("Creating outline generation agent")
+    chunk_retriever_tool = FunctionTool.from_defaults(fn=lambda query: chunk_retriever_fn(query, vector_index))
+    doc_retriever_tool = FunctionTool.from_defaults(fn=lambda query: doc_retriever_fn(query, vector_index, summary_indexes))
+
+    agent = OutputGenerationAgent(
+        chunk_retriever_tool,
+        doc_retriever_tool,
+        llm=outline_gen_llm,
+        sllm=outline_gen_sllm,
+        verbose=True,
+        timeout=60.0,
     )
-
+    logging.info("Outline generation agent created")
+    response = await agent.run(instructions)
     logging.info("Response for outline generation", response)
 
     return response.response
 
 def generate_outline(artifacts_path, module_id, instructions):
+    logging.info("Parsing files")
     index = parse_files(module_id, artifacts_path, download_path=Path("output") / module_id)
-    save_index(index, Path("output") / module_id / "index")
+    logging.info("Saving index")
+    save_index(index, Path("output") / module_id / "summary_index")
+    logging.info("Index saved")
+    logging.info("Generating outline")
     outline = _generate_outline(module_id, instructions)
+    logging.info("Outline generated")
     return outline
 
 def _break_outline(outline):
@@ -157,46 +470,30 @@ def _break_outline(outline):
 
     return sections
 
-class TextBlock(BaseModel):
-    """Text block for a slide."""
-
-    text: str = Field(..., description="The text for this block. It should be in markdown format.")
-
-class SpeakerNotes(BaseModel):
-    """Speaker notes for a slide."""
-
-    text: str = Field(..., description="The speaker notes for this slide.")
-
-class SlideStructure(BaseModel):
-    """Data model for a slide.
-    
-    Contains slide header, slide_content and the speaker notes for the slide.
-    """
-
-    slide_header: str = Field(..., description="The header for the slide.")
-    slide_content: List[TextBlock] = Field(..., description="The content for the slide.")
-    speaker_notes: SpeakerNotes = Field(..., description="The speaker notes for the slide.")
-
-
 
 def get_slides(module_id, outline):
-    index = load_index(module_id)
-    sllm = llm.as_structured_llm(output_cls=SlideStructure)
-    query_engine = index.as_query_engine(
-        similarity_top_k=10,
-        llm=sllm,
-        response_mode="compact",
+    vector_index, summary_indexes = load_indexes(module_id)
+    
+    chunk_retriever_tool = FunctionTool.from_defaults(fn=lambda query: chunk_retriever_fn(query, vector_index))
+    doc_retriever_tool = FunctionTool.from_defaults(fn=lambda query: doc_retriever_fn(query, vector_index, summary_indexes))
+
+    agent = OutputGenerationAgent(
+        chunk_retriever_tool,
+        doc_retriever_tool,
+        llm=slide_gen_llm,
+        sllm=slide_gen_sllm,
+        verbose=True,
+        timeout=60.0,
     )
 
     sections = _break_outline(outline)
     logging.info("Sections after breaking the outline", sections)
 
-    prompt = PromptHandler().get_prompt("GET_SLIDE_PROMPT")
 
     slides = []
 
     for section in sections:
-        response = query_engine.query(prompt + section)
+        response = agent.run(section)
         logging.info("Reponse for slide generation", response)
         slides.append({
             "slide_header": response.response.slide_header,
@@ -207,23 +504,25 @@ def get_slides(module_id, outline):
     return slides
 
 
+       
 
-        
+def get_module_information(module_id, outline):
+    
+    vector_index, summary_indexes = load_indexes(module_id)
 
-def get_module_information(module_id):
-    index = load_index(module_id)
-    sllm = llm.as_structured_llm()
-    query_engine = index.as_query_engine(
-        similarity_top_k=10,
-        llm=sllm,
-        response_mode="compact",
+    chunk_retriever_tool = FunctionTool.from_defaults(fn=lambda query: chunk_retriever_fn(query, vector_index))
+    doc_retriever_tool = FunctionTool.from_defaults(fn=lambda query: doc_retriever_fn(query, vector_index, summary_indexes))
+
+    agent = OutputGenerationAgent(
+        chunk_retriever_tool,
+        doc_retriever_tool,
+        llm=module_information_gen_llm,
+        sllm=module_information_gen_sllm,
+        verbose=True,
+        timeout=60.0,
     )
 
-    prompt = PromptHandler().get_prompt("CONTENT_TO_SUMMARY_PROMPT")
-
-    response = query_engine.query(prompt)
-
-    logging.info("Prompt for module information generation", prompt)
+    response = agent.run(outline)
     logging.info("Response for module information generation", response)
 
     return response.response

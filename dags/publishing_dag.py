@@ -2,12 +2,14 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.utils.dates import days_ago
 from course.publishing import publish_course
+import asyncio
 
 def process_publishing_request(**kwargs):
     entry_id = kwargs["dag_run"].conf.get("entry_id")
-    collection = kwargs["dag_run"].conf.get("collection")
+    collection = "in_publishing_queue"
     print(f"Processing entry with ID: {entry_id} from collection: {collection} for publishing.")
-    publish_course(entry_id)
+    response = asyncio.run(publish_course(entry_id))
+    print(response)
 
 default_args = {
     'owner': 'airflow',

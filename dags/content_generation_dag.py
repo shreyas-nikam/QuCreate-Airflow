@@ -5,9 +5,10 @@ from course.content_generation import generate_content
 
 def content_generation(**kwargs):
     entry_id = kwargs["dag_run"].conf.get("entry_id")
-    collection = kwargs["dag_run"].conf.get("collection")
+    collection = "in_content_generation_queue"
     print(f"Processing entry with ID: {entry_id} from collection: {collection} for content generation.")
-    generate_content(entry_id)
+    response = generate_content(entry_id)
+    print(response)
 
 default_args = {
     'owner': 'airflow',

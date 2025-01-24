@@ -259,4 +259,6 @@ def publish_course(entry_id):
     else:
         handle_create_course(course_id)
 
+    return True
+
     

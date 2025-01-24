@@ -2,12 +2,16 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.utils.dates import days_ago
 from course.outline_generation import process_outline
+import asyncio
 
 def outline_generation_request(**kwargs):
     entry_id = kwargs["dag_run"].conf.get("entry_id")
-    collection = kwargs["dag_run"].conf.get("collection")
+    collection = "in_outline_generation_queue"
     print(f"Processing entry with ID: {entry_id} from collection: {collection} for outline generation.")
-    process_outline(entry_id)
+    response = asyncio.run(process_outline(entry_id))
+    print(response)
+    return response
+
 
 default_args = {
     'owner': 'airflow',
@@ -19,7 +23,7 @@ default_args = {
 }
 
 with DAG(
-    'publishing_dag',
+    'outline_generation_dag',
     default_args=default_args,
     description='DAG for processing the outline generation queue entries',
     schedule_interval=None,  # Triggered externally
@@ -28,5 +32,4 @@ with DAG(
     outline_generation_request_task = PythonOperator(
         task_id='outline_generation_request',
         python_callable=outline_generation_request,
-        provide_context=True,
     )

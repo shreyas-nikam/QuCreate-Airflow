@@ -100,7 +100,7 @@ def generate_content(entry_id):
     
 
     with open(f"output/{module_id}/module_info.md", "w") as f:
-        f.write(get_module_information(outline))
+        f.write(get_module_information(module_id, outline))
 
     key = f"qu-course-design/{course_id}/{module_id}/pre_processed_content/module_info.md"
     s3_client.upload_file(f"output/{module_id}/module_info.md", key)

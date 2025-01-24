@@ -76,7 +76,7 @@ def _download_slide(slide_link, download_path):
     """
     try:
         s3_client = S3FileManager()
-        slide_key = slide_link.split("/")[3]
+        slide_key = slide_link.split("/")[3]  + "/" + "/".join(slide_link.split("/")[4:])
         slide_name = slide_key.split("/")[-1]
         s3_client.download_file(slide_key, download_path+"/"+slide_name)
         return download_path
@@ -90,7 +90,7 @@ def _get_slide_content(slide_link):
     """
     try:
         s3_client = S3FileManager()
-        slide_key = slide_link.split("/")[3]
+        slide_key = slide_link.split("/")[3] + "/" + "/".join(slide_link.split("/")[4:])
         slide_content = json.loads(s3_client.get_object(slide_key))
         return slide_content
     except Exception as e:
@@ -403,13 +403,13 @@ async def upload_files(video_path, assessment_path, chatbot_path, module_id, res
         s3_client = S3FileManager()
         key = resource_link.split("/")[-1]
         video_key = resource_link.replace(key, f"{module_id}.mp4")
-        video_key = video_key.split("/")[3]
+        video_key = video_key.split("/")[3] + "/" + "/".join(video_key.split("/")[4:])
         await s3_client.upload_file(video_path, video_key)
         video_link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+video_key
 
         if has_assessment:
             assessment_key = resource_link.replace(key, f"{module_id}_assessment.json")
-            assessment_key = assessment_key.split("/")[3]
+            assessment_key = assessment_key.split("/")[3] + "/" + "/".join(assessment_key.split("/")[4:])
             await s3_client.upload_file(assessment_path, assessment_key)
             assessment_link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+assessment_key
         else:
@@ -420,7 +420,7 @@ async def upload_files(video_path, assessment_path, chatbot_path, module_id, res
             for file in os.listdir(chatbot_path):
                 if "retriever" in file:
                     chatbot_key = resource_link.replace(key, "retriever"+file.split("retriever")[1])
-                    chatbot_key = chatbot_key.split("/")[3]
+                    chatbot_key = chatbot_key.split("/")[3] + "/" + "/".join(chatbot_key.split("/")[4:])
                     s3_client.upload_file(file, chatbot_key)
 
             chatbot_link = resource_link.replace(key, "retriever")

@@ -185,7 +185,7 @@ def _add_transcript_to_pptx(pptx_file_path, transcript):
 async def _save_file_to_s3(pptx_file_path, resource_link):
     try:
         s3_client = S3FileManager()
-        key = resource_link.split("/")[3]
+        key = resource_link.split("/")[3] + "/" + "/".join(resource_link.split("/")[4:])
         key = key.replace("pre_processed_content", "pre_processed_structure")
         key = key.replace("Slide_Content.json", "Slide_Generated.pptx")
         await s3_client.upload_file(pptx_file_path, key)
@@ -221,8 +221,8 @@ def _update_slide_entry(course_id, course, module, resource_link):
                 prev_location = obj["resource_link"]
                 new_location = prev_location.replace("pre_processed_content", "pre_processed_structure")
 
-                prev_location_key = prev_location.split("/")[3]
-                new_location_key = new_location.split("/")[3]
+                prev_location_key = prev_location.split("/")[3] + "/" + "/".join(prev_location.split("/")[4:])
+                new_location_key = new_location.split("/")[3] + "/" + "/".join(new_location.split("/")[4:])
             
                 s3_client.copy_file(prev_location_key, new_location_key)
 
@@ -272,7 +272,7 @@ async def process_structure_request(entry_id):
     if slide_content_link is None:
         return "Slide Content is not Generated. Please generate the slide content first."
     
-    slide_content_key = slide_content_link.split("/")[3]
+    slide_content_key = slide_content_link.split("/")[3] + "/" + "/".join(slide_content_link.split("/")[4:])
     markdown, transcript = _extract_content(slide_content_key)
 
     pptx_file_path = _generate_pptx(markdown, module_id)

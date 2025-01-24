@@ -16,6 +16,7 @@ from utils.mongodb_client import AtlasClient
 import logging
 from bson.objectid import ObjectId
 from course.helper import generate_outline
+from pathlib import Path
 
 
 def _get_course_and_module(course_id, module_id):
@@ -48,13 +49,17 @@ def fetch_artifacts(course_id, module_id):
             logging.error("Course or module not found")
             return None
         
-        output_path = f"output/{module_id}"
+        output_path = f"output/{module_id}/files"
+        Path(output_path).mkdir(parents=True, exist_ok=True)
         for resource in module['raw_resources']:
             # Fetch the resources from s3
             s3 = S3FileManager()
-            
-            if resource['resource_type']=="File":
-                s3.download_file(resource['resource_link'], f"{output_path}/{resource['resource_name']}")
+            resource_key = resource['resource_link'].split("/")[3] + "/" + "/".join(resource['resource_link'].split("/")[4:])
+            if resource['resource_type'] == "File":
+                logging.info(f"Downloading file: {resource_key}")
+                s3.download_file(resource_key, f"{output_path}/{resource['resource_link'].split('/')[-1]}")
+
+            # TODO: Add support for other resource types like images, links and notes etc.
         
         return output_path
     
@@ -72,6 +77,7 @@ def upload_outline(course_id, module_id, outline):
         logging.error(f"Error in uploading outline: {e}")
 
 async def process_outline(entry_id):
+    logging.info(f"Processing entry with ID: {entry_id} for outline generation.")
     mongodb_client = AtlasClient()
     entry = mongodb_client.find("in_outline_generation_queue", filter={"_id": ObjectId(entry_id)})
     if not entry:
@@ -81,13 +87,21 @@ async def process_outline(entry_id):
     course_id = entry.get("course_id")
     module_id = entry.get("module_id")
     instructions = entry.get("instructions")
+
+    logging.info(f"Fetched entry from the queue. Course ID: {course_id}, Module ID: {module_id}")
     
+    logging.info("Fetching artifacts")
     # Fetch all the artifacts.
-    artifacts_path = await fetch_artifacts(course_id, module_id)
+    artifacts_path = fetch_artifacts(course_id, module_id)
+    logging.info(f"Artifacts fetched at: {artifacts_path}")
     # Feed it as files to the assistants api.
     # artifacts_path is output/module_id
-    outline = await generate_outline(artifacts_path, module_id, instructions)
+    logging.info("Generating outline")
+    outline = generate_outline(artifacts_path, module_id, instructions)
+    logging.info(f"Outline generated: {outline}")
     # Upload the outline on the mongodb.
-    await upload_outline(course_id, module_id, outline)
+    logging.info("Uploading outline")
+    upload_outline(course_id, module_id, outline)
+    logging.info("Outline uploaded")
 
     return True
