@@ -1,4 +1,4 @@
-
+import asyncio
 from typing import Any, List
 from llama_index.core.llms.function_calling import FunctionCallingLLM
 from llama_index.core.llms.structured_llm import StructuredLLM
@@ -55,8 +55,8 @@ llama_index.core.set_global_handler(
     "arize_phoenix", endpoint="https://llamatrace.com/v1/traces"
 )
 
-embed_model = OpenAIEmbedding(model="text-embedding-3-large")
-llm = OpenAI(model=os.getenv("OPENAI_MODEL"))
+embed_model = OpenAIEmbedding(model="text-embedding-3-large", api_key=OPENAI_KEY)
+llm = OpenAI(model=os.getenv("OPENAI_MODEL"), api_key=OPENAI_KEY)
 
 Settings.embed_model = embed_model
 Settings.llm = llm
@@ -64,8 +64,8 @@ Settings.llm = llm
 parser = LlamaParse(
     result_type="markdown",
     use_vendor_multimodal_model=True,
-    vendor_multimodal_model_name="openai-gpt4o",
-    vendor_multimodal_model_key=OPENAI_KEY,
+    vendor_multimodal_model_name="openai-gpt-4o-mini",
+    vendor_multimodal_api_key=OPENAI_KEY,
     api_key=LLAMAPARSE_API_KEY,
     fast_mode=True,
 )
@@ -83,26 +83,33 @@ def _get_sorted_image_files(image_dir):
     sorted_files = sorted(raw_files, key=get_page_number)
     return sorted_files
 
-def get_text_nodes(json_dicts, image_dir=None):
+def get_text_nodes(json_dicts, file_path):
     """Split docs into nodes, by separator."""
     nodes = []
-
-    image_files = _get_sorted_image_files(image_dir) if image_dir is not None else None
-    md_texts = [d["md"] if "md" in d else d["text"] for d in json_dicts]
-
-    for idx, md_text in enumerate(md_texts):
-        chunk_metadata = chunk_metadata = {
-            "page_num": idx + 1,
-            "parsed_text_markdown": md_text,
+    md_texts = []
+    for d in json_dicts:
+        if "md" in d:
+            md_texts.append(d["md"])
+        else:
+            text = d["text"]
+            cleaned_text = re.sub(r'[ \t]+', ' ', text)  # Replace multiple spaces/tabs with a single space
+            cleaned_text = re.sub(r'\n\s*\n', '\n', cleaned_text)  # Remove extra blank lines   
+            md_texts.append(cleaned_text)
+        chunk_metadata = {
+            "page_num": d["page"],
+            "parsed_text_markdown": md_texts[-1],
+            "file_path": str(file_path),
+            
         }
-        if image_files is not None:
-            image_file = image_files[idx]
-            chunk_metadata["image_path"] = str(image_file)
-        chunk_metadata["parsed_text_markdown"] = md_text
+        if "images" in d:
+            image_paths = [img['path'] for img in d["images"]]
+            chunk_metadata["image_paths"] = image_paths
+            
         node = TextNode(
             text="",
             metadata=chunk_metadata,
         )
+    
         nodes.append(node)
 
     return nodes
@@ -129,18 +136,18 @@ def parse_files(module_id, file_path, download_path):
 
     all_text_nodes = []
     text_nodes_dict = {}
-    for paper_path, paper_dict in file_dicts.items():
-        json_dicts = paper_dict["json_dicts"]
-        text_nodes = get_text_nodes(
-            json_dicts, paper_dict["paper_path"], image_dir=paper_dict["image_path"]
-        )
+    for file_path, file_dict in file_dicts.items():
+        json_dicts = file_dict["json_dicts"]
+        text_nodes = get_text_nodes(json_dicts, file_dict["file_path"])
         all_text_nodes.extend(text_nodes)
-        text_nodes_dict[paper_path] = text_nodes
-
+        text_nodes_dict[file_path] = text_nodes
 
 
     output_pickle_path = Path("output") / module_id / "text_nodes_pickle.pkl"
     pickle.dump(text_nodes_dict, open(output_pickle_path, "wb"))
+
+    logging.info("All text nodes:")
+    logging.info(all_text_nodes)
 
     vector_index = VectorStoreIndex(all_text_nodes)
     vector_index.set_index_id(f"{module_id}_vector_index")
@@ -158,18 +165,18 @@ def load_indexes(module_id):
     text_nodes_dict = pickle.load(open(Path("output") / module_id / "text_nodes_pickle.pkl", "rb"))
     
     all_text_nodes = []
-    for paper_path, text_nodes in text_nodes_dict.items():
+    for file_path, text_nodes in text_nodes_dict.items():
         all_text_nodes.extend(text_nodes)
 
-    paper_summary_indexes = {
-        paper_path: SummaryIndex(text_nodes_dict[file_path]) for file_path, text_nodes in text_nodes_dict.items()
+    summary_indexes = {
+        file_path: SummaryIndex(text_nodes_dict[file_path]) for file_path, text_nodes in text_nodes_dict.items()
     }
 
     path = Path("output") / module_id / "vector_index"
     storage_context = StorageContext.from_defaults(persist_dir=path)
-    vector_index = load_index_from_storage(storage_context, index_id=module_id)
+    vector_index = load_index_from_storage(storage_context, index_id=f"{module_id}_vector_index")
 
-    return vector_index, paper_summary_indexes
+    return vector_index, summary_indexes
 
 
 # function tools
@@ -187,7 +194,7 @@ def chunk_retriever_fn(query: str, vector_index) -> List[NodeWithScore]:
 
 def _get_document_nodes(
     nodes: List[NodeWithScore], 
-    paper_summary_indexes: dict,
+    summary_indexes: dict,
     top_n: int = 2
 ) -> List[NodeWithScore]:
     """Get document nodes from a set of chunk nodes.
@@ -206,15 +213,15 @@ def _get_document_nodes(
     sorted_file_paths = sorted(
         file_path_scores.items(), key=itemgetter(1), reverse=True
     )
-    # Take top_n paper paths
+    # Take top_n file paths
     top_file_paths = [path for path, score in sorted_file_paths[:top_n]]
 
-    # use summary index to get nodes from all paper paths
+    # use summary index to get nodes from all file paths
     all_nodes = []
     for file_path in top_file_paths:
         # NOTE: input to retriever can be blank
         all_nodes.extend(
-            paper_summary_indexes[Path(file_path).name].as_retriever().retrieve("")
+            summary_indexes[Path(file_path).name].as_retriever().retrieve("")
         )
 
     return all_nodes
@@ -280,9 +287,9 @@ outline_system_prompt = prompt_handler.get_prompt("GET_OUTLINE_PROMPT")
 slide_system_prompt = prompt_handler.get_prompt("GET_SLIDE_PROMPT")
 module_information_system_prompt = prompt_handler.get_prompt("CONTENT_TO_SUMMARY_PROMPT")
 
-outline_gen_llm = OpenAI(model=os.getenv("OPENAI_MODEL"), system_prompt=outline_system_prompt)
-slide_gen_llm = OpenAI(model=os.getenv("OPENAI_MODEL"), system_prompt=slide_system_prompt)
-module_information_gen_llm = OpenAI(model=os.getenv("OPENAI_MODEL"), system_prompt=module_information_system_prompt)
+outline_gen_llm = OpenAI(model=os.getenv("OPENAI_MODEL"), system_prompt=outline_system_prompt, api_key=OPENAI_KEY)
+slide_gen_llm = OpenAI(model=os.getenv("OPENAI_MODEL"), system_prompt=slide_system_prompt, api_key=OPENAI_KEY)
+module_information_gen_llm = OpenAI(model=os.getenv("OPENAI_MODEL"), system_prompt=module_information_system_prompt, api_key=OPENAI_KEY)
 
 outline_gen_sllm = llm.as_structured_llm(output_cls=OutlineOutput)
 slide_gen_sllm = llm.as_structured_llm(output_cls=SlideOutput)
@@ -305,8 +312,8 @@ class OutputGenerationEvent(Event):
     pass
 
 
-class OutputGenerationAgent(Workflow):
-    """Output generation agent."""
+class OutlineGenerationAgent(Workflow):
+    """Outline generation agent. Generates the outline based on the input by retrieving relevant chunks and documents from the corpus."""
 
     def __init__(
         self,
@@ -381,7 +388,6 @@ class OutputGenerationAgent(Workflow):
         """Handle retrieval.
 
         Store retrieved chunks, and go back to agent reasoning loop.
-
         """
         query = ev.tool_call.tool_kwargs["query"]
         if isinstance(ev, ChunkRetrievalEvent):
@@ -410,7 +416,7 @@ class OutputGenerationAgent(Workflow):
     async def generate_output(
         self, ctx: Context, ev: OutputGenerationEvent
     ) -> StopEvent:
-        """Generate output."""
+        """Generate the final outline based on the context of the inputs from the retrieval tools."""
         # given all the context, generate query
         response = self.output_gen_summarizer.synthesize(
             ctx.data["query"], nodes=ctx.data["stored_chunks"]
@@ -419,41 +425,24 @@ class OutputGenerationAgent(Workflow):
         return StopEvent(result={"response": response})
 
 
-
-
-async def _generate_outline(module_id, instructions):
+async def generate_outline(module_id, instructions):
     logging.info("Loading index")
     vector_index, summary_indexes = load_indexes(module_id)
     logging.info("Index loaded")
-    
-    logging.info("Creating outline generation agent")
-    chunk_retriever_tool = FunctionTool.from_defaults(fn=lambda query: chunk_retriever_fn(query, vector_index))
-    doc_retriever_tool = FunctionTool.from_defaults(fn=lambda query: doc_retriever_fn(query, vector_index, summary_indexes))
-
-    agent = OutputGenerationAgent(
-        chunk_retriever_tool,
-        doc_retriever_tool,
+   
+    query_engine = vector_index.as_query_engine(
+        similarity_top_k=5,
         llm=outline_gen_llm,
-        sllm=outline_gen_sllm,
-        verbose=True,
-        timeout=60.0,
     )
-    logging.info("Outline generation agent created")
-    response = await agent.run(instructions)
-    logging.info("Response for outline generation", response)
+    logging.info("Instructions for outline generation"+instructions)
+    response = query_engine.query(instructions+" for the module: Augmentation of LLM Prompt.")
+    response = response.response
+    response = response.replace("```markdown", "").replace("```", "").replace("```", "").replace("markdown", "")
+    logging.info("Response for agent's output: "+response)
 
-    return response.response
+    return response
 
-def generate_outline(artifacts_path, module_id, instructions):
-    logging.info("Parsing files")
-    index = parse_files(module_id, artifacts_path, download_path=Path("output") / module_id)
-    logging.info("Saving index")
-    save_index(index, Path("output") / module_id / "summary_index")
-    logging.info("Index saved")
-    logging.info("Generating outline")
-    outline = _generate_outline(module_id, instructions)
-    logging.info("Outline generated")
-    return outline
+
 
 def _break_outline(outline):
     pattern = r'(?m)^# .*$'
@@ -474,10 +463,10 @@ def _break_outline(outline):
 def get_slides(module_id, outline):
     vector_index, summary_indexes = load_indexes(module_id)
     
-    chunk_retriever_tool = FunctionTool.from_defaults(fn=lambda query: chunk_retriever_fn(query, vector_index))
-    doc_retriever_tool = FunctionTool.from_defaults(fn=lambda query: doc_retriever_fn(query, vector_index, summary_indexes))
+    chunk_retriever_tool = FunctionTool.from_defaults(fn=lambda query: chunk_retriever_fn(query, vector_index), name="chunk_retriever")
+    doc_retriever_tool = FunctionTool.from_defaults(fn=lambda query: doc_retriever_fn(query, vector_index, summary_indexes), name="doc_retriever")
 
-    agent = OutputGenerationAgent(
+    agent = OutlineGenerationAgent(
         chunk_retriever_tool,
         doc_retriever_tool,
         llm=slide_gen_llm,
@@ -487,14 +476,14 @@ def get_slides(module_id, outline):
     )
 
     sections = _break_outline(outline)
-    logging.info("Sections after breaking the outline", sections)
+    logging.info("Sections after breaking the outline"+sections)
 
 
     slides = []
 
     for section in sections:
-        response = agent.run(section)
-        logging.info("Reponse for slide generation", response)
+        response = agent.run(input=section)
+        logging.info("Reponse for slide generation"+response)
         slides.append({
             "slide_header": response.response.slide_header,
             "slide_content": response.response.slide_content,
@@ -510,10 +499,10 @@ def get_module_information(module_id, outline):
     
     vector_index, summary_indexes = load_indexes(module_id)
 
-    chunk_retriever_tool = FunctionTool.from_defaults(fn=lambda query: chunk_retriever_fn(query, vector_index))
-    doc_retriever_tool = FunctionTool.from_defaults(fn=lambda query: doc_retriever_fn(query, vector_index, summary_indexes))
+    chunk_retriever_tool = FunctionTool.from_defaults(fn=lambda query: chunk_retriever_fn(query, vector_index), name="chunk_retriever")
+    doc_retriever_tool = FunctionTool.from_defaults(fn=lambda query: doc_retriever_fn(query, vector_index, summary_indexes), name="doc_retriever")
 
-    agent = OutputGenerationAgent(
+    agent = OutlineGenerationAgent(
         chunk_retriever_tool,
         doc_retriever_tool,
         llm=module_information_gen_llm,
@@ -522,7 +511,7 @@ def get_module_information(module_id, outline):
         timeout=60.0,
     )
 
-    response = agent.run(outline)
-    logging.info("Response for module information generation", response)
+    response = agent.run(input=outline)
+    logging.info("Response for module information generation: "+response)
 
     return response.response

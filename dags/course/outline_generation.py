@@ -97,7 +97,7 @@ async def process_outline(entry_id):
     # Feed it as files to the assistants api.
     # artifacts_path is output/module_id
     logging.info("Generating outline")
-    outline = generate_outline(artifacts_path, module_id, instructions)
+    outline = await generate_outline(artifacts_path, module_id, instructions)
     logging.info(f"Outline generated: {outline}")
     # Upload the outline on the mongodb.
     logging.info("Uploading outline")
