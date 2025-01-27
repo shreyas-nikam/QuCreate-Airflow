@@ -54,6 +54,13 @@ def upload_outline_task(course_id, module_id, outline, **kwargs):
     logging.info("Outline uploaded")
     return True
 
+def delete_entry_from_mongodb_task(course_id, module_id, **kwargs):
+    logging.info("Deleting entry from MongoDB")
+    mongodb_client = AtlasClient()
+    mongodb_client.delete("in_outline_generation_queue", filter={"course_id": course_id, "module_id": module_id})
+    logging.info("Entry deleted")
+    return True
+
 default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
@@ -113,6 +120,14 @@ with DAG(
         provide_context=True
     )
 
+    # Delete the entry from MongoDB
+    delete_entry_from_mongodb_step = PythonOperator(
+        task_id='delete_entry_from_mongodb',
+        python_callable=delete_entry_from_mongodb_task,
+        op_args=["{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[0] }}", "{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[1] }}"],
+        provide_context=True
+    )
+
     end = EmptyOperator(task_id='end')
 
-    start >> fetch_entry >> fetch_artifacts_step >> parse_files_and_create_index_step >> generate_outline_step >> upload_outline_step >> end
+    start >> fetch_entry >> fetch_artifacts_step >> parse_files_and_create_index_step >> generate_outline_step >> upload_outline_step >> delete_entry_from_mongodb_step >> end

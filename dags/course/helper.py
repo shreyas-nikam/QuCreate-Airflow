@@ -115,7 +115,7 @@ def get_text_nodes(json_dicts, file_path):
     return nodes
 
 def parse_files(module_id, file_path, download_path):
-    file_paths = [file_path for file_path in Path(file_path).iterdir()]
+    file_paths = [file_path for file_path in Path(file_path).iterdir() if file_path.suffix == ".pdf"]
     
     file_dicts = {}
 

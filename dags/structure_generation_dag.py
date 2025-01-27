@@ -28,8 +28,8 @@ with DAG(
     catchup=False,
 ) as dag:
     pass
-    # process_structure_generation_request_task = PythonOperator(
-    #     task_id='process_structure_generation_request',
-    #     python_callable=process_structure_generation_request,
-    #     provide_context=True,
-    # )
+    process_structure_generation_request_task = PythonOperator(
+        task_id='process_structure_generation_request',
+        python_callable=process_structure_generation_request,
+        provide_context=True,
+    )
