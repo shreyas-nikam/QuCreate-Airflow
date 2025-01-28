@@ -94,8 +94,7 @@ def upload_outline(course_id, module_id, outline):
         # Upload the outline on the mongodb.
         
         # Add the resource to the pre_processed_outline object for the module if it exists, if it doesnt exist, create it.
-        if not module.get("pre_processed_outline"):
-            module["pre_processed_outline"] = []
+        module["pre_processed_outline"] = []
         module["pre_processed_outline"].append(resource)
         module["status"] = "Outline Review"
         course["modules"] = [m if m.get("module_id") != ObjectId(module_id) else module for m in course["modules"]]

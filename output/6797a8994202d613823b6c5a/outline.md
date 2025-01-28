@@ -7,50 +7,23 @@
 - Importance in financial analysis
 
 ## Slide 2: Understanding the P/E Ratio
-- Explanation of Price/Earnings Ratio
-- Common misconceptions
-- Role of Return on Invested Capital (ROIC)
+- Explanation of Price/Earnings (P/E) Ratio
+- How it reflects market expectations
+- Limitations of P/E Ratio
 
-## Slide 3: Theoretical Framework
-- Discounted Cash Flow (DCF) Model
-- Importance of ROIC in DCF
-- Trade-offs in DCF variables
+## Slide 3: The Role of ROIC in P/E Ratios
+- Return on Invested Capital (ROIC) explained
+- Impact of ROIC on P/E Ratios
+- Trade-offs in the Discounted Cash Flow (DCF) model
 
-## Slide 4: Real-World Application of P/E Ratios
-- Deconstructing P/E ratios
-- Case studies and examples
+## Slide 4: The PEG Ratio Explained
+- How PEG Ratio is calculated
+- Relationship between P/E and growth rates
+- Misconceptions about PEG Ratios
 
-## Slide 5: Introduction to PEG Ratios
-- Definition and calculation
-- Assumptions behind PEG ratios
-
-## Slide 6: Variability in Growth Rates
-- Impact on P/E and PEG ratios
-- Analysis of growth rate variability
-
-## Slide 7: Fair Value P/E Ratios
+## Slide 5: Analyzing Fair Value P/E Ratios
 - Table of Fair Value P/E Ratios
+- Impact of ROIC-Cost of Capital Spread
 - Interpretation of data
 
-![Fair Value P/E Ratios Table](output/6797a8994202d613823b6c5a/files/6797a8a84202d613823b6c5e/b31a6ae9-9ad1-490b-869d-692df4f2b9d6-img_p0_1.png)
-
-## Slide 8: Fair Value PEG Ratios
-- Table of Fair Value PEG Ratios
-- Key insights from data
-
-## Slide 9: Misuse of P/E and PEG Ratios
-- Common pitfalls in interpretation
-- Examples of misinterpretation
-
-## Slide 10: Relationship Between Growth and Free Cash Flow
-- Interaction of growth and cash flow
-- Impact on valuation
-
-## Slide 11: Conclusion and Key Takeaways
-- Summary of insights
-- Importance of ROIC in valuation
-
-## Slide 12: Q&A Session
-- Open floor for questions
-- Discussion on practical applications
-
+![Fair Value P/E Ratios Table](output/6797a8994202d613823b6c5a/files/6797a8a84202d613823b6c5e/674d4476-7c38-48de-b8d0-0bc3295ae295-img_p0_1.png)

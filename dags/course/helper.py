@@ -195,7 +195,7 @@ def chunk_retriever_fn(query: str, vector_index) -> List[NodeWithScore]:
 def _get_document_nodes(
     nodes: List[NodeWithScore], 
     summary_indexes: dict,
-    top_n: int = 2
+    top_n: int = 5
 ) -> List[NodeWithScore]:
     """Get document nodes from a set of chunk nodes.
 
@@ -216,12 +216,13 @@ def _get_document_nodes(
     # Take top_n file paths
     top_file_paths = [path for path, score in sorted_file_paths[:top_n]]
 
+
     # use summary index to get nodes from all file paths
     all_nodes = []
     for file_path in top_file_paths:
         # NOTE: input to retriever can be blank
         all_nodes.extend(
-            summary_indexes[Path(file_path).name].as_retriever().retrieve("")
+            summary_indexes[Path(file_path)].as_retriever().retrieve("")
         )
 
     return all_nodes
@@ -270,7 +271,7 @@ class SlideOutput(BaseModel):
     """
 
     slide_header: str = Field(..., description="The header for the slide.")
-    slide_content: List[TextBlock] = Field(..., description="The content for the slide.")
+    slide_content: str = Field(..., description="The content for the slide in markdown bullet point format. Should be 3-5 bullet points starting with -. Could also be links to images in markdown format. You can also add mermaid diagrams in mardown format to explain the concept.")
     speaker_notes: str = Field(..., description="The speaker notes for the slide.")
 
 class ModuleInformationOutput(BaseModel):
@@ -280,7 +281,7 @@ class ModuleInformationOutput(BaseModel):
 
     """
 
-    module_information: str = Field(..., description="The module information.")
+    module_information: str = Field(..., description="The module information summarized in 2 lines and 3-5 bullet points in markdown format.")
 
 prompt_handler = PromptHandler()
 outline_system_prompt = prompt_handler.get_prompt("GET_OUTLINE_PROMPT")
@@ -312,8 +313,8 @@ class OutputGenerationEvent(Event):
     pass
 
 
-class OutlineGenerationAgent(Workflow):
-    """Outline generation agent. Generates the outline based on the input by retrieving relevant chunks and documents from the corpus."""
+class SlidesGenerationAgent(Workflow):
+    """Slides generation agent. Generates the slides based on the input by first retrieving relevant chunks and documents from the corpus."""
 
     def __init__(
         self,
@@ -327,7 +328,7 @@ class OutlineGenerationAgent(Workflow):
         self.chunk_retriever_tool = chunk_retriever_tool
         self.doc_retriever_tool = doc_retriever_tool
 
-        self.llm = llm or OpenAI()
+        self.llm = llm
         self.summarizer = CompactAndRefine(llm=self.llm)
         assert self.llm.metadata.is_function_calling_model
 
@@ -358,17 +359,23 @@ class OutlineGenerationAgent(Workflow):
     async def handle_llm_input(
         self, ctx: Context, ev: InputEvent
     ) -> ChunkRetrievalEvent | DocRetrievalEvent | OutputGenerationEvent | StopEvent:
+        logging.info("Handling LLM input")
         chat_history = ev.input
+
+        logging.info("Chat history: "+str(chat_history))
 
         response = await self.llm.achat_with_tools(
             [self.chunk_retriever_tool, self.doc_retriever_tool],
             chat_history=chat_history,
         )
+        print("Response from async chat with tools function: ", response)
         self.memory.put(response.message)
+        print("Memory: ", self.memory.get())
 
         tool_calls = self.llm.get_tool_calls_from_response(
             response, error_on_no_tool_call=False
         )
+        print("Tool calls: ", tool_calls)
         if not tool_calls:
             # all the content should be stored in the context, so just pass along input
             return OutputGenerationEvent(input=ev.input)
@@ -389,10 +396,13 @@ class OutlineGenerationAgent(Workflow):
 
         Store retrieved chunks, and go back to agent reasoning loop.
         """
+        logging.info("Handling retrieval")
         query = ev.tool_call.tool_kwargs["query"]
         if isinstance(ev, ChunkRetrievalEvent):
+            logging.info("Retrieving chunks")
             retrieved_chunks = self.chunk_retriever_tool(query).raw_output
         else:
+            logging.info("Retrieving docs")
             retrieved_chunks = self.doc_retriever_tool(query).raw_output
         ctx.data["stored_chunks"].extend(retrieved_chunks)
 
@@ -416,13 +426,20 @@ class OutlineGenerationAgent(Workflow):
     async def generate_output(
         self, ctx: Context, ev: OutputGenerationEvent
     ) -> StopEvent:
-        """Generate the final outline based on the context of the inputs from the retrieval tools."""
+        """Generate the final slide based on the context of the inputs from the retrieval tools."""
         # given all the context, generate query
+        print("Calling the output generation final event")
+        print(ctx.data["query"])
+        print(ctx.data["stored_chunks"])
         response = self.output_gen_summarizer.synthesize(
             ctx.data["query"], nodes=ctx.data["stored_chunks"]
         )
+        print("Response from output generation: ", response)
 
         return StopEvent(result={"response": response})
+
+ 
+
 
 
 async def generate_outline(module_id, instructions):
@@ -442,76 +459,66 @@ async def generate_outline(module_id, instructions):
 
     return response
 
+import json
+from utils.llm import LLM
+
 
 
 def _break_outline(outline):
-    pattern = r'(?m)^# .*$'
-    matches = list(re.finditer(pattern, outline))
-    
-    # Initialize a list to hold the split sections
-    sections = []
 
-    # Iterate over the matches to extract sections
-    for i in range(len(matches)):
-        start = matches[i].start()
-        end = matches[i + 1].start() if i + 1 < len(matches) else len(outline)
-        sections.append(outline[start:end].strip())
-
-    return sections
+    # ask chatgpt to break the outline into slides
+    # return the output as a list
+    prompt = PromptHandler().get_prompt("BREAK_OUTLINE_PROMPT")
+    llm = LLM()
+    response = llm.get_response(prompt+outline)
+    print(response[response.find("["):response.rfind("]")+1])
+    response = json.loads(response[response.find("["):response.rfind("]")+1])
+    return response
 
 
-def get_slides(module_id, outline):
+async def get_slides(module_id, outline):
+    logging.info("Loading index")
     vector_index, summary_indexes = load_indexes(module_id)
-    
+
+    logging.info("Creating tools")
     chunk_retriever_tool = FunctionTool.from_defaults(fn=lambda query: chunk_retriever_fn(query, vector_index), name="chunk_retriever")
     doc_retriever_tool = FunctionTool.from_defaults(fn=lambda query: doc_retriever_fn(query, vector_index, summary_indexes), name="doc_retriever")
 
-    agent = OutlineGenerationAgent(
-        chunk_retriever_tool,
-        doc_retriever_tool,
+    agent = SlidesGenerationAgent(
+        chunk_retriever_tool=chunk_retriever_tool,
+        doc_retriever_tool=doc_retriever_tool,
         llm=slide_gen_llm,
         sllm=slide_gen_sllm,
         verbose=True,
-        timeout=60.0,
+        timeout=360.0,
     )
 
     sections = _break_outline(outline)
-    logging.info("Sections after breaking the outline"+sections)
-
+    logging.info("Sections after breaking the outline: "+str(len(sections)))
 
     slides = []
 
     for section in sections:
-        response = agent.run(input=section)
-        logging.info("Reponse for slide generation"+response)
+        logging.info("Section: "+section)
+        response = await agent.run(input="Help me get the slide header, slide content and the speaker notes for ONE SLIDE for the following topic after retrieving relevant information to the following topic from the tools. The slide header should be short and descriptive. The slide content should be descriptive and have 3-5 bullet points. The speaker notes should be as if presenting the topic on teh slides based on the slide content and should be in a continuous flow.\n"+section)
+        
         slides.append({
-            "slide_header": response.response.slide_header,
-            "slide_content": response.response.slide_content,
-            "speaker_notes": response.response.speaker_notes
+            "slide_header": response['response'].response.slide_header,
+            "slide_content": response['response'].response.slide_content,
+            "speaker_notes": response['response'].response.speaker_notes
         })
+
 
     return slides
 
 
        
-
-def get_module_information(module_id, outline):
+async def get_module_information(module_id, outline):
     
-    vector_index, summary_indexes = load_indexes(module_id)
-
-    chunk_retriever_tool = FunctionTool.from_defaults(fn=lambda query: chunk_retriever_fn(query, vector_index), name="chunk_retriever")
-    doc_retriever_tool = FunctionTool.from_defaults(fn=lambda query: doc_retriever_fn(query, vector_index, summary_indexes), name="doc_retriever")
-
-    agent = OutlineGenerationAgent(
-        chunk_retriever_tool,
-        doc_retriever_tool,
-        llm=module_information_gen_llm,
-        sllm=module_information_gen_sllm,
-        verbose=True,
-        timeout=60.0,
-    )
-
-    response = agent.run(input=outline)
-    logging.info("Response for module information generation: "+response)
-
-    return response.response
+    # generate teh module information using an llm
+    prompt = PromptHandler().get_prompt("GET_MODULE_INFORMATION_PROMPT")
+    llm = LLM()
+    response = llm.get_response(prompt+str(outline).replace("{", "{{").replace("}", "}}"))
+    print(response)
+    
+    return response

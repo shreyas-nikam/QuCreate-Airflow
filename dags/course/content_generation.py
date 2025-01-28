@@ -20,7 +20,9 @@ from utils.mongodb_client import AtlasClient
 from utils.s3_file_manager import S3FileManager
 from bson.objectid import ObjectId
 import logging
-from course.helper import get_slides, get_module_information
+from utils.s3_file_manager import S3FileManager
+from pathlib import Path
+import os
 
 def fetch_outline(course_id, module_id):
     try:
@@ -36,10 +38,26 @@ def fetch_outline(course_id, module_id):
         if not module:
             return "Module not found"
 
-        return module.get("outline")
+        outline_link = module.get("pre_processed_outline")[0]["resource_link"]
+
+        s3_file_manager = S3FileManager()
+        download_path = f"output/{module_id}/outline.md"
+        
+        if Path(download_path).exists():
+            os.remove(download_path)
+        
+        Path(download_path[:download_path.rindex("/")]).mkdir(parents=True, exist_ok=True)
+        outline_key = outline_link.split("amazonaws.com/")[1]
+        s3_file_manager.download_file(outline_key, download_path)
+
+        # read outline
+        with open(download_path, "r") as f:
+            outline_content = f.read()
+
+        return outline_content
     
     except Exception as e:
-        logging.error(f"Error in getting course and module: {e}")
+        logging.error(f"Error in fetching outline: {e}")
 
 def _get_course_and_module(course_id, module_id):
     try:
@@ -59,67 +77,6 @@ def _get_course_and_module(course_id, module_id):
     except Exception as e:
         logging.error(f"Error in getting course and module: {e}")
         return None, None
-
-def generate_content(entry_id):
-    mongodb_client = AtlasClient()
-    entry = mongodb_client.find("in_content_generation_queue", filter={"_id": ObjectId(entry_id)})
-    course_id = entry[0].get("course_id")
-    module_id = entry[0].get("module_id")
-
-    outline = fetch_outline(course_id, module_id)
-
-    if outline == "Course not found" or outline == "Module not found":
-        return outline
-    
-    slides = get_slides(module_id, outline)
-
-    with open(f"output/{module_id}/slides.json", "w") as f:
-        f.write(slides)
-    
-    # upload it to s3
-    key = f"qu-course-design/{course_id}/{module_id}/pre_processed_content/slides.json"
-    s3_client = S3FileManager()
-
-    s3_client.upload_file(f"output/{module_id}/slides.json", key)
-
-    slide_resource = {
-        "resource_type": "Slide_Content",
-        "resource_name": "Slide Content",
-        "resource_description": "Slide content generated using AI",
-        "resource_link": "https://qucoursify.s3.us-east-1.amazonaws.com/"+key,
-        "resource_id": ObjectId()
-    }
-
-    mongodb_client = AtlasClient()
-    course, module = _get_course_and_module(course_id, module_id)
-
-    if not course or not module:
-        return "Course or Module not found"
-    
-    module["pre_processed_content"].append(slide_resource)
-    
-
-    with open(f"output/{module_id}/module_info.md", "w") as f:
-        f.write(get_module_information(module_id, outline))
-
-    key = f"qu-course-design/{course_id}/{module_id}/pre_processed_content/module_info.md"
-    s3_client.upload_file(f"output/{module_id}/module_info.md", key)
-
-    module_info_resource = {
-        "resource_type": "Module_Information",
-        "resource_name": "Module Information",
-        "resource_description": "Module Information generated using AI",
-        "resource_link": "https://qucoursify.s3.us-east-1.amazonaws.com/"+key,
-        "resource_id": ObjectId()
-    }
-
-    module["pre_processed_content"].append(module_info_resource)
-
-    course["modules"] = [module if m.get("module_id") == ObjectId(module_id) else m for m in course.get("modules", [])]
-
-    mongodb_client.update("course_design", filter={"_id": ObjectId(course_id)}, update=course)
-
-    return "Content generated successfully"
 
 
 

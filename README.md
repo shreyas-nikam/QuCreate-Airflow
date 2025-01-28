@@ -37,8 +37,6 @@ Steps to run the DAG
 8. Run `python mongodb_monitor` to run the sensor for detecting updates in the job queue.
 
 
-
-
 For deploying:
 1. pip freeze > requirements.txt
 

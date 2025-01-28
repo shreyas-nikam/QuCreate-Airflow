@@ -276,8 +276,62 @@ Speaker Notes Instructions:
 
 Outline for the slide:
 
-"""
+""",
+"BREAK_OUTLINE_PROMPT":"""
+You are given an outline for a presentation. You need to break down the outline into individual slides.
+Each slide should have a slide header and slide content.
 
+Instructions:
+1. Each slide should have a slide header and slide content.
+2. Return the slide headers and slide content in the given example in json format of list of strings.
+3. Do not have anything other than the slide headers and slide content in the output.
+4. Multiple lines in the output should be separated by a newline character.
+
+Example:
+Input:
+# Module 1: Introduction to AI in Finance
+## Topic 1: AI in Financial Report Writing
+- AI-powered tools for automatic generation of financial reports, quarterly earnings, and forecasts
+- AI in Financial Report Writing
+- How NLP models can automate content such as market commentary, regulatory documents, or credit analysis
+- Example: BloombergGPT for producing financial summaries and analyses
+
+
+## Topic 2: Natural Language Processing (NLP) in Finance
+- How NLP models can automate content such as market commentary, regulatory documents, or credit analysis
+- Example: JP Morgan's AI applications in creating research reports
+
+
+Output:
+["AI in Financial Report Writing\n\nAI-powered tools for automatic generation of financial reports, quarterly earnings, and forecasts\n\nAI in Financial Report Writing\n\nHow NLP models can automate content such as market commentary, regulatory documents, or credit analysis\n\nExample: BloombergGPT for producing financial summaries and analyses",
+"Natural Language Processing (NLP) in Finance\n\nHow NLP models can automate content such as market commentary, regulatory documents, or credit analysis\n\nExample: JP Morgan's AI applications in creating research reports"]
+
+Input:
+
+
+""",
+
+"GET_MODULE_INFORMATION_PROMPT":"""
+Given the outline of a slide deck, you need to write the module information for the course.
+It should cover what the module will cover.
+The output should be in two lines and 3-5 bullet points in markdonw format.
+Do not return anything other than the output string.
+
+Example:
+Input:
+[{{"slide_header": "AI in Financial Report Writing - AI-powered tools for automatic generation of financial reports, quarterly earnings, and forecasts"}},
+{{"slide_header": "Natural Language Processing (NLP) in Finance - How NLP models can automate content such as market commentary, regulatory documents, or credit analysis"}},
+{{"slide_header": "Generative AI for Marketing and Client Engagement - Personalized content marketing and customer engagement at scale"}}]
+
+Output:
+The module will cover AI in Financial Report Writing, Natural Language Processing (NLP) in Finance, and Generative AI for Marketing and Client Engagement.
+- AI-powered tools for automatic generation of financial reports, quarterly earnings, and forecasts
+- How NLP models can automate content such as market commentary, regulatory documents, or credit analysis
+- Personalized content marketing and customer engagement at scale
+
+Input:
+
+"""
 }
 
 def get_prompts():

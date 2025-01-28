@@ -228,6 +228,8 @@ class S3FileManager:
         bool: True if the file was downloaded successfully, False otherwise
         """
         try:
+            if os.path.exists(download_path):
+                os.remove(download_path)
             with open(download_path, 'wb') as f:
                 self.s3_client.download_fileobj(self.bucket_name, key, f)
             return True
@@ -237,6 +239,7 @@ class S3FileManager:
         except ClientError as e:
             logging.error(e)
             return False
+        
 
     def delete_file(self, key):
         """
