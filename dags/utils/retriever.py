@@ -14,7 +14,7 @@ import pickle
 from utils.json_handler import JSONHandler
 
 load_dotenv()
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_KEY")
 COHERE_API_KEY = os.getenv("COHERE_API_KEY")
 
 def singleton(cls, *args, **kw):
@@ -27,25 +27,22 @@ def singleton(cls, *args, **kw):
 
 @singleton
 class Retriever:
-    def __init__(self):
-        # Get the config files
-        self.static_config = JSONHandler('inputs/static_config.json').get_config()
-        
+    def __init__(self):        
         # Initialize the retrievers
         self.bm25_retriever = None
         self.vector_store = None
         self.faiss_retriever = None
 
-        self.embeddings = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
+        self.embeddings = OpenAIEmbeddings(api_key=OPENAI_API_KEY)
         
         # Initialize the re_ranker
         self.re_ranker = CohereRerank(cohere_api_key=COHERE_API_KEY)
 
         self.params_loaded = False
 
-        self.db_path = "inputs/retriever/hybrid_db"
+        self.db_path = "output/retriever"
 
-    def create_vector_store(self, file_content, db_path="inputs/retriever/hybrid_db"):
+    def create_vector_store(self, file_content, db_path="output/retriever"):
         # Load the documents
         documents = file_content
         docs = []
@@ -87,10 +84,10 @@ class Retriever:
             self.faiss_retriever = pickle.load(f)
 
         # Load the retrievers for use
-        faiss_retriever = self.vector_store.as_retriever(search_kwargs={"k": self.static_config['HYPERPARAMETERS']['FAISS_K']})
+        faiss_retriever = self.vector_store.as_retriever(search_kwargs={"k": 5})
         ensemble_retriever = EnsembleRetriever(
             retrievers=[self.bm25_retriever, faiss_retriever], 
-            weights=self.static_config['HYPERPARAMETERS']['RETRIEVER_WEIGHTS']
+            weights=[0.5, 0.5]
         )
 
         self.compression_retriever = ContextualCompressionRetriever(

@@ -5,7 +5,9 @@ Deliverables Consists of:
 3. Video: Video generated using the content from the previous step.
 4. Assessment: Assessment generated using the content from the previous step.
 """
+import ast
 import os
+from pydub import AudioSegment
 import subprocess
 from utils.s3_file_manager import S3FileManager
 from utils.mongodb_client import AtlasClient
@@ -24,6 +26,7 @@ import uuid
 from utils.prompt_handler import PromptHandler
 from utils.llm import LLM
 from utils.retriever import Retriever
+from course.structure_generation import _get_course_and_module
 
 
 def _get_course_and_module(course_id, module_id):
@@ -48,10 +51,11 @@ def _get_course_and_module(course_id, module_id):
         logging.error(f"Error in getting course and module: {e}")
 
 
-def _get_resources_link(module):
+def _get_resources_link(course_id, module_id):
     """
     Get the slide content from the module
     """
+    course, module = _get_course_and_module(course_id, module_id)
     try:
         content_link, slide_link = None, None
         for obj in module["pre_processed_structure"]:
@@ -75,10 +79,16 @@ def _download_slide(slide_link, download_path):
     Download the slide from the slide_link
     """
     try:
+        logging.info(f"Downloading slide from: {slide_link}")
         s3_client = S3FileManager()
+        logging.info(f"Downloading slide from: {slide_link}")
         slide_key = slide_link.split("/")[3]  + "/" + "/".join(slide_link.split("/")[4:])
+        logging.info(f"Slide key: {slide_key}")
         slide_name = slide_key.split("/")[-1]
-        s3_client.download_file(slide_key, download_path+"/"+slide_name)
+        logging.info(f"Slide name: {slide_name}")
+        logging.info(f"Download path: {download_path}")
+        download_path = download_path + "/" + slide_name
+        s3_client.download_file(slide_key, download_path)
         return download_path
     except Exception as e:
         logging.error(f"Error in downloading slide: {e}")
@@ -89,15 +99,19 @@ def _get_slide_content(slide_link):
     Get the slide content from the slide_content json file
     """
     try:
+        logging.info(f"Getting slide content from: {slide_link}")
         s3_client = S3FileManager()
         slide_key = slide_link.split("/")[3] + "/" + "/".join(slide_link.split("/")[4:])
-        slide_content = json.loads(s3_client.get_object(slide_key))
+        logging.info(f"Slide key: {slide_key}")
+        file = s3_client.get_object(slide_key)
+        slide_content = file["Body"].read().decode("utf-8")
         return slide_content
     except Exception as e:
         logging.error(f"Error in getting slide content: {e}")
         return None
     
 def _get_transcript_from_ppt(ppt):
+    logging.info(f"Getting speaker notes from the ppt: {ppt}")
     prs = Presentation(ppt)
     speaker_notes = []
     for slide in prs.slides:
@@ -244,7 +258,7 @@ def _stitch_videos(module_id, updation_map):
     clips = [VideoFileClip(video_file) for video_file in video_files]
     final_clip = concatenate_videoclips(clips, method="compose")
     Path(f"{OUTPUT_PATH}/{module_id}").mkdir(parents=True, exist_ok=True)
-    final_clip.write_videofile(str(Path(f"{OUTPUT_PATH}/{module_id}/{module_id}.mp4")), fps=10)
+    final_clip.write_videofile(str(Path(f"{OUTPUT_PATH}/{module_id}/video.mp4")), fps=10)
 
 
 def _get_questions(module_content, num_questions=10):
@@ -269,37 +283,46 @@ def _get_questions(module_content, num_questions=10):
 
 def _save_questions(questions, module_id):
     OUTPUT_PATH = "output"
+    print(questions)
     with open(Path(f"{OUTPUT_PATH}/{module_id}/questions.json"), "w", encoding='utf-8') as file:
         file.write(json.dumps(questions))
 
 
 def _get_questions_helper(module_content, module_id, chunk_size=20000):
     overall_questions = {}
-
+    logging.info(f"Getting questions for module: {module_id}")
+    module_content_json = ast.literal_eval(module_content)
+    module_content = ""
+    for slide in module_content_json:
+        module_content += slide["slide_content"] + "\n"
+    
     try:
         questions = []
         text = module_content
         chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
         for chunk in chunks:
-            questions.extend(_get_questions(chunk, 5))
+            questions.extend(_get_questions(chunk, 10 if len(chunks)==1 else 5))
 
         for index, question in enumerate(questions):
             questions[index]["uuid"] = str(uuid.uuid4())
 
-        overall_questions[module_id] = questions
-        _save_questions(overall_questions, module_id)
+        _save_questions(questions, module_id)
     except Exception as e:
         logging.error(f"Error in getting questions for module {module_id}: {e}")
-    _save_questions(overall_questions, module_id)
-
 
 def _add_silence_to_audio(module_id, audio_file_name):
     OUTPUT_PATH = f"output/{module_id}/audio"
     new_audio_filename = audio_file_name.replace("_", "_with_silence_")
-    command = f"""ffmpeg -i "{OUTPUT_PATH}/{audio_file_name}" -i silence.wav -filter_complex "[0:a][1:a]concat=n=2:v=0:a=1" "{OUTPUT_PATH}/{new_audio_filename}" -hide_banner -loglevel error"""
-    os.system(command)
+    audio_file_path = Path(f"{OUTPUT_PATH}/{audio_file_name}")
+    new_audio_file_path = Path(f"{OUTPUT_PATH}/{new_audio_filename}")
+    audio = AudioSegment.from_wav(audio_file_path)
+    silence = AudioSegment.silent(duration=1000)
+    audio = silence + audio
+    audio.export(new_audio_file_path, format="wav")
+    return new_audio_filename
 
 def _create_video_parallel(module_id, slide_number, image):
+    logging.info(f"Creating video for slide: {slide_number+1}")
     OUTPUT_PATH = "output"
     audio_folder = Path(f"{OUTPUT_PATH}/{module_id}/audio")
     video_folder = Path(f"{OUTPUT_PATH}/{module_id}/video")
@@ -307,6 +330,7 @@ def _create_video_parallel(module_id, slide_number, image):
 
 
     # Load audio file for the current slide
+    logging.info(f"Adding silence to audio for slide: {slide_number+1}")
     _add_silence_to_audio(module_id, f"audio_{slide_number+1}.wav")
 
 
@@ -332,6 +356,7 @@ def _create_video_parallel(module_id, slide_number, image):
 
 
 def _create_videos(module_id):
+    
     updation_map = {}
     OUTPUT_PATH = "output"
     image_folder = Path(f"{OUTPUT_PATH}/{module_id}/images")
@@ -358,7 +383,7 @@ def _create_videos(module_id):
     with open(Path(f"{OUTPUT_PATH}/{module_id}/updation_map.json"), "w", encoding='utf-8') as file:
         file.write(json.dumps(updation_map))
 
-
+    logging.info("Stitching videos")
     _stitch_videos(module_id, updation_map)
 
 def _generate_video(slide_path, module_id, voice_name):
@@ -368,13 +393,13 @@ def _generate_video(slide_path, module_id, voice_name):
     _create_videos(module_id)
 
 
-def _generate_assessment(slide_content):
+def _generate_assessment(module_id, slide_content):
     """
     Generate the assessment from the slide content
     """
     try:
         module_content = slide_content
-        _get_questions_helper(module_content, 10)
+        _get_questions_helper(module_content, module_id)
     except Exception as e:
         logging.error(f"Error in generating assessment: {e}")
         return None
@@ -388,6 +413,15 @@ def _generate_chatbot(slide_content, destination):
     file_name: Path to the folder containing the course content
     destination: Path to the folder where the retriever object will be saved
     """
+
+    logging.info("Creating the retriever object")
+    
+    slide_content_json = ast.literal_eval(slide_content)
+    slide_content = ""
+    for slide in slide_content_json:
+        slide_content += slide["slide_content"] + "\n"
+
+    
     retriever = Retriever()
 
     Path(destination).mkdir(parents=True, exist_ok=True)
@@ -395,35 +429,33 @@ def _generate_chatbot(slide_content, destination):
     retriever.create_vector_store(slide_content, db_path=destination)
 
 
-async def upload_files(video_path, assessment_path, chatbot_path, module_id, resource_link, has_assessment, has_chatbot):
+async def upload_files(course_id, video_path, assessment_path, chatbot_path, module_id, has_assessment, has_chatbot):
     """
     Upload the video, assessment file, chatbot to s3
     """
     try:
+        logging.info(f"Uploading video to s3 for module: {module_id}")
         s3_client = S3FileManager()
-        key = resource_link.split("/")[-1]
-        video_key = resource_link.replace(key, f"{module_id}.mp4")
-        video_key = video_key.split("/")[3] + "/" + "/".join(video_key.split("/")[4:])
-        await s3_client.upload_file(video_path, video_key)
+        key = f"qu-course-design/{course_id}/{module_id}/pre_processed_deliverables/"
+        video_key = key + "video.mp4"
+        await s3_client.upload_video(video_path, video_key)
         video_link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+video_key
 
         if has_assessment:
-            assessment_key = resource_link.replace(key, f"{module_id}_assessment.json")
-            assessment_key = assessment_key.split("/")[3] + "/" + "/".join(assessment_key.split("/")[4:])
+            logging.info(f"Uploading assessment to s3 for module: {module_id}")
+            assessment_key = key + f"{module_id}_assessment.json"
             await s3_client.upload_file(assessment_path, assessment_key)
             assessment_link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+assessment_key
         else:
             assessment_link = ""
 
         if has_chatbot:
+            logging.info(f"Uploading chatbot to s3 for module: {module_id}")
+            files = ["bm25_retriever.pkl", "faiss_retriever.pkl", "hybrid_db/index.faiss", "hybrid_db/index.pkl"]
+            for file in files:
+                await s3_client.upload_file(f"{chatbot_path}/{file}", f"{key}retriever/{file}")
 
-            for file in os.listdir(chatbot_path):
-                if "retriever" in file:
-                    chatbot_key = resource_link.replace(key, "retriever"+file.split("retriever")[1])
-                    chatbot_key = chatbot_key.split("/")[3] + "/" + "/".join(chatbot_key.split("/")[4:])
-                    s3_client.upload_file(file, chatbot_key)
-
-            chatbot_link = resource_link.replace(key, "retriever")
+            chatbot_link = "https://qucoursify.s3.us-east-1.amazonaws.com/retriever"
 
         else:
             chatbot_link = ""
@@ -434,10 +466,11 @@ async def upload_files(video_path, assessment_path, chatbot_path, module_id, res
         logging.error(f"Error in uploading files: {e}")
         return None, None, None
     
-def update_module_with_deliverables(module, video_link, assessment_link, chatbot_link, module_id, course, course_id, has_chatbot, has_assessment):
+def update_module_with_deliverables(course_id, module_id, video_link, assessment_link, chatbot_link, has_chatbot, has_assessment, slide_link):
     """
     Update the module with the video, assessment, chatbot links in pre_processed_deliverables
     """
+    course, module = _get_course_and_module(course_id, module_id)
     try:
         module["pre_processed_deliverables"] = [
             {
@@ -448,6 +481,32 @@ def update_module_with_deliverables(module, video_link, assessment_link, chatbot
                 "resource_id": ObjectId()
             },
         ]
+
+        for resource in module['pre_processed_structure']:
+            if resource["resource_type"] == "Module_Information":
+                
+                prev_location = resource["resource_link"]
+                new_location = prev_location.replace("pre_processed_structure", "pre_processed_deliverables")
+                new_location_key = new_location.split("/")[3] + "/" + "/".join(new_location.split("/")[4:])
+                s3_client = S3FileManager()
+                s3_client.copy_file(prev_location, new_location_key)
+                new_location_link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+new_location_key
+
+                module["pre_processed_deliverables"].append({
+                    "resource_type": "Module_Information",
+                    "resource_link": new_location_link,
+                    "resource_name": f"{module_id}_module_info.md",
+                    "resource_description": "Module Information",
+                    "resource_id": ObjectId()
+                })
+
+        module["pre_processed_deliverables"].append({
+            "resource_type": "Slide_Generated",
+            "resource_link": slide_link,
+            "resource_name": f"{module_id}.pptx",
+            "resource_description": "Slides generated from the slide content",
+            "resource_id": ObjectId()
+        })
 
         if has_assessment:
             module["pre_processed_deliverables"].append({
@@ -462,60 +521,10 @@ def update_module_with_deliverables(module, video_link, assessment_link, chatbot
             module['chatbot_link'] = chatbot_link
         
 
+        module["status"] = "Deliverables Review"
         course['modules'] = [module if m["module_id"] == module["module_id"] else m for m in course['modules']]
-        course["status"] = "Deliverables Review"
         mongodb_client = AtlasClient()
-        mongodb_client.update("course_design", filter={"_id": ObjectId(course_id)}, update=course)
+        mongodb_client.update("course_design", filter={"_id": ObjectId(course_id)}, update={"$set": course})
         
     except Exception as e:
         logging.error(f"Error in updating module with deliverables: {e}")
-
-async def process_deliverables_request(entry_id):
-    """
-    Steps:
-    1. Get the course and module object from the course_id and module_id
-    2. Get the slide from the pre_processed_content
-    3. Generate the video from the slide
-    4. Extract the content from the slide
-    5. Create an assessment based on the content from the slide
-    6. Create a chatbot based on the content from the slide
-    7. Upload the video, assessment file, chatbot to s3
-    8. Update the module with the video, assessment, chatbot links in pre_processed_deliverables
-    9. Update the status of the course to Deliverables Review
-    """
-    mongodb_client = AtlasClient()
-    entry = mongodb_client.find("in_deliverables_generation_queue", filter={"_id": ObjectId(entry_id)})
-
-    if not entry:
-        return False
-    
-    entry = entry[0]
-    course_id = entry["course_id"]
-    module_id = entry["module_id"]
-    
-    voice_name = entry['voice_name']
-    has_assessment = entry['assessment']
-    has_chatbot = entry['chatbot']
-
-    course, module = _get_course_and_module(course_id, module_id)
-    slide_link, content_link = _get_resources_link(module)
-
-    # download it and fetch the content
-    downloaded_slide_path = _download_slide(slide_link, download_path=f"output/{module_id}")
-    slide_content = _get_slide_content(content_link)
-
-    # generate the video
-    video_path = _generate_video(downloaded_slide_path, module_id, voice_name)
-
-    if has_assessment:
-        assessment_path = _generate_assessment(slide_content)
-    assessment_path = f"output/{module_id}/questions.json"
-
-    if has_chatbot:
-        chatbot = _generate_chatbot(slide_content, destination=f"output/{module_id}")
-    
-    video_link, assessment_link, chatbot_link = upload_files(video_path, assessment_path, chatbot, module_id, slide_link, has_assessment, has_chatbot)
-
-    update_module_with_deliverables(module, video_link, assessment_link, chatbot_link, module_id, course, course_id, has_chatbot, has_assessment)
-
-    return True

@@ -3,6 +3,15 @@ from airflow.operators.python import PythonOperator
 from airflow.utils.dates import days_ago
 from course.publishing import publish_course
 import asyncio
+from airflow.operators.empty import EmptyOperator
+from course.publishing import _update_modules, handle_update_course, handle_create_course
+
+# Steps:
+# 1. Get the course id which is to be published.
+# 2. Update the course if it exists. Create a new course if it doesn't.
+# 3. Upda the modules with the new resources.
+# 4. Update the status of the course to "Published"
+
 
 def process_publishing_request(**kwargs):
     entry_id = kwargs["dag_run"].conf.get("entry_id")

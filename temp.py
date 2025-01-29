@@ -1,16 +1,53 @@
-import json
-import ast
+import boto3
+import logging
+from botocore.exceptions import NoCredentialsError
+import os
+from dotenv import load_dotenv
 
-# The input JSON-like string
-incorrect_json = """[{'slide_header': 'Introduction to P/E and PEG Ratios', 'slide_content': "- P/E Ratio: Price-to-Earnings ratio, a measure of a company's current share price relative to its per-share earnings.\\n- PEG Ratio: Price/Earnings to Growth ratio, a valuation metric for determining the relative trade-off between the price of a stock, the earnings generated per share, and the company's expected growth.\\n- Importance: Both ratios are crucial in financial analysis for assessing a company's valuation and growth potential.", 'speaker_notes': "Today, we will explore the concepts of P/E and PEG ratios, which are fundamental tools in financial analysis. The P/E ratio, or Price-to-Earnings ratio, is a key indicator that compares a company's current share price to its per-share earnings, providing insights into how the market values the company's earnings. On the other hand, the PEG ratio, or Price/Earnings to Growth ratio, offers a more nuanced view by factoring in the company's expected growth, helping investors understand the trade-off between price, earnings, and growth potential. Both ratios are essential for evaluating a company's valuation and growth prospects, making them indispensable in financial analysis."}, {'slide_header': 'Understanding the P/E Ratio', 'slide_content': "- The Price/Earnings (P/E) ratio is a key financial metric used to evaluate a company's stock price relative to its earnings.\\n- It reflects market expectations about a company's future growth and profitability.\\n- A high P/E ratio may indicate high growth expectations, while a low P/E ratio might suggest undervaluation or low growth prospects.\\n- Limitations include its inability to account for differences in growth rates and the impact of external factors on earnings.\\n- P/E ratios should be used in conjunction with other metrics for a comprehensive analysis.", 'speaker_notes': "Today, we're diving into the Price/Earnings or P/E ratio, a fundamental tool in financial analysis. The P/E ratio helps investors assess whether a stock is over or undervalued by comparing its current price to its earnings. This ratio is crucial as it reflects what the market expects from a company in terms of growth and profitability. A higher P/E might suggest that investors expect significant growth, whereas a lower P/E could indicate the opposite or even a potential undervaluation. However, it's important to remember that the P/E ratio has its limitations. It doesn't account for varying growth rates across companies or external factors that might affect earnings. Therefore, while the P/E ratio is a valuable indicator, it should always be used alongside other financial metrics to get a full picture of a company's valuation."}]"""
+load_dotenv()
 
-# Use ast.literal_eval to safely evaluate the string as a Python object
-try:
-    python_data = ast.literal_eval(incorrect_json)
-    
-    # Convert the Python object to valid JSON
-    json_data = json.dumps(python_data, indent=4)
-    print("Corrected JSON:")
-    print(json_data)
-except (ValueError, SyntaxError) as e:
-    print("Error parsing JSON-like string:", e)
+# Configure AWS Credentials
+AWS_ACCESS_KEY = os.getenv("AWS_ACCESS_KEY")
+AWS_SECRET_KEY = os.getenv("AWS_SECRET_KEY")
+BUCKET_NAME = os.getenv("AWS_BUCKET_NAME")
+
+
+def upload_video_to_s3(video_file_path, s3_key):
+    """
+    Uploads a video file to an S3 bucket using upload_fileobj.
+
+    :param video_file_path: Path to the video file on disk.
+    :param s3_key: S3 key (path in S3 where the video will be stored).
+    """
+    try:
+        # Create an S3 client
+        s3 = boto3.client(
+            's3',
+            aws_access_key_id=AWS_ACCESS_KEY,
+            aws_secret_access_key=AWS_SECRET_KEY
+        )
+
+        # Open the video file in binary mode
+        with open(video_file_path, "rb") as video_file:
+            s3.put_object(
+                video_file,
+                BUCKET_NAME,
+                s3_key,
+                ContentType='video/mp4',  # Explicitly set Content-Type
+                ExtraArgs={'ContentType': 'video/mp4'},  # Explicitly set Content-Type
+                ContentDisposition='inline'  # Display the video in the browser
+            )
+
+        logging.info(f"Upload successful: {video_file_path} → s3://{BUCKET_NAME}/{s3_key}")
+        return f"https://{BUCKET_NAME}.s3.amazonaws.com/{s3_key}"
+
+    except Exception as e:
+        logging.error(f"Failed to upload {video_file_path} to S3: {e}")
+        return None
+
+# Example Usage
+video_path = "/home/qu-user1/Github/QuCreate-airflow/output/6797a8994202d613823b6c5a/video.mp4"
+s3_video_key = "temp/uploaded_video.mp4"  # The S3 key
+
+s3_url = upload_video_to_s3(video_path, s3_video_key)
+print(f"Uploaded video URL: {s3_url}")

@@ -66,6 +66,31 @@ class S3FileManager:
             aws_secret_access_key=self.aws_secret_access_key
         )
 
+    async def upload_video(self, file_path, key):
+        """
+        Upload a video file to S3
+        
+        Args:
+        file_path: str - path to the video file to be uploaded
+        key: str - key to be used in the S3 bucket
+        
+        Returns:
+        bool: True if the file was uploaded successfully, False otherwise
+        """
+        try:
+            self.s3_client.upload_file(file_path, self.bucket_name, key, ExtraArgs={'ContentType': 'video/mp4'})
+            self.make_object_public(key)
+            return True
+        except FileNotFoundError:
+            logging.error("The file was not found")
+            return False
+        except NoCredentialsError:
+            logging.error("Credentials not available")
+            return False
+        except ClientError as e:
+            logging.error(e)
+            return False
+
     def upload_file_obj(self, file_obj, key):
         """
         Upload a file object to S3
