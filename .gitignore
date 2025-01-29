@@ -31,3 +31,5 @@ Thumbs.db
 # Ignore Airflow's test and example DAGs
 example_dags/
 venv/
+
+output/

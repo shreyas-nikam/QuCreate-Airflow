@@ -3,6 +3,7 @@ Structure Consists of:
 1. Slide_Generated: Generated slide using the content from the previous step.
 2. Module Information: Markdown content for Module Information
 """
+import ast
 import os
 from utils.s3_file_manager import S3FileManager
 from utils.mongodb_client import AtlasClient
@@ -52,19 +53,35 @@ def _get_resource_link(module):
         return None
 
 
-def _extract_content(slide_content):
+def _extract_content(module_name, slide_content_key):
     """
     Extract the slide content from the slide_content json file
     """
     try:
         s3_client = S3FileManager()
-        slide_content = json.loads(s3_client.get_object(slide_content))
+        response = s3_client.get_object(slide_content_key)
+        slide_content = json.loads(response["Body"].read())
+        
 
-        markdown = ""
-        transcript = []
+        markdown = f"""template: Martin Template.pptx
+pageTitleSize: 30
+sectionTitleSize: 24
+baseTextSize: 28
+style.fgcolor.blue: 0000FF
+style.fgcolor.red: FF0000
+style.fgcolor.green: 00FF00
+
+# {module_name}
+ 
+"""
+        transcript = ["Hello welcome to the module"]
 
         for slide in slide_content:
-            markdown += f"# {slide['slide_header']}\n\n{slide['slide_content']}\n\n"
+            # replace the starting hyphen at the start of each line only with a  * for each line
+            slide_content = slide["slide_content"].replace("\n-", "\n*")
+            if slide_content.startswith("-"):
+                slide_content = "*" + slide_content[1:]
+            markdown += f"### {slide['slide_header']}\n\n{slide_content}\n\n"
             transcript.append(slide["speaker_notes"])
 
         return markdown, transcript
@@ -84,12 +101,12 @@ def _generate_pptx(markdown, module_id):
             f.write(markdown)
         
         md_file_path = Path(f"output/{module_id}/content.md")
-        output_ppt_path = Path(f"output/{module_id}/content.pptx")
+        output_ppt_path = Path(f"output/{module_id}/structure.pptx")
 
         # Generate the pptx file
         os.system(f'python md2pptx/md2pptx.py "{str(output_ppt_path.absolute())}" < "{str(md_file_path.absolute())}"')
 
-        return f"output/{module_id}/content.pptx"
+        return f"output/{module_id}/structure.pptx"
     
     except Exception as e:
         logging.error(f"Error in generating pptx: {e}")
@@ -175,6 +192,7 @@ def _format_ppt(output_ppt_path,
 
 def _add_transcript_to_pptx(pptx_file_path, transcript):
     try:
+        transcript = ast.literal_eval(transcript)
         _format_ppt(pptx_file_path, transcript)
         return pptx_file_path
     except Exception as e:
@@ -182,12 +200,9 @@ def _add_transcript_to_pptx(pptx_file_path, transcript):
         return None
 
 
-async def _save_file_to_s3(pptx_file_path, resource_link):
+async def _save_file_to_s3(pptx_file_path, key):
     try:
         s3_client = S3FileManager()
-        key = resource_link.split("/")[3] + "/" + "/".join(resource_link.split("/")[4:])
-        key = key.replace("pre_processed_content", "pre_processed_structure")
-        key = key.replace("Slide_Content.json", "Slide_Generated.pptx")
         await s3_client.upload_file(pptx_file_path, key)
         resource_link = f"https://qucoursify.s3.us-east-1.amazonaws.com/{key}"
         return resource_link
@@ -196,9 +211,10 @@ async def _save_file_to_s3(pptx_file_path, resource_link):
         return None
 
 
-def _update_slide_entry(course_id, course, module, resource_link):
+def _update_slide_entry(course_id, module_id, resource_link):
     try:
         mongodb_client = AtlasClient()
+        course, module = _get_course_and_module(course_id, module_id)
         s3_client = S3FileManager()
 
         resource = {
@@ -209,8 +225,8 @@ def _update_slide_entry(course_id, course, module, resource_link):
             "resource_id": ObjectId()
         }
 
-        if "pre_processed_structure" not in module:
-            module["pre_processed_structure"] = []
+        
+        module["pre_processed_structure"] = []
 
         module["pre_processed_structure"].append(resource)
 
@@ -236,13 +252,15 @@ def _update_slide_entry(course_id, course, module, resource_link):
                 module["pre_processed_structure"].append(resource)
 
         # Check: might break
+        module["status"] = "Structure Review"
         course["modules"] = [module if m["module_id"] == module["module_id"] else m for m in course["modules"]]
         logging.info("Updated the course object with the new slide content")
         logging.info(f"Updated course: {course}")
         
-        course["status"] = "Structure Review"
         
-        mongodb_client.update("course_design", filter={"_id": ObjectId(course_id)}, update=course)
+        mongodb_client.update("course_design", filter={"_id": ObjectId(course_id)}, update={
+            "$set": course
+        })
 
         return True
     
@@ -279,5 +297,5 @@ async def process_structure_request(entry_id):
 
     pptx_file_path_with_transcript = _add_transcript_to_pptx(pptx_file_path, transcript)
     resource_link = await _save_file_to_s3(pptx_file_path_with_transcript, resource_link)
-    updated_slide = _update_slide_entry(course_id, course, module, resource_link)
-    return True
+    updated_slide = _update_slide_entry(course_id, module_id, resource_link)
+    return updated_slide
