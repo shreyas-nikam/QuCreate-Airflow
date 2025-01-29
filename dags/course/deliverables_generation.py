@@ -405,7 +405,7 @@ def _generate_assessment(module_id, slide_content):
         return None
     
     
-def _generate_chatbot(slide_content, destination):
+async def _generate_chatbot(slide_content, destination, course_id, module_id):
     """
     Creates a retriever object for the course
     
@@ -422,11 +422,15 @@ def _generate_chatbot(slide_content, destination):
         slide_content += slide["slide_content"] + "\n"
 
     
-    retriever = Retriever()
+    s3_file_manager = S3FileManager()
+    with open(f"{destination}/slide_content.txt", "w") as file:
+        file.write(slide_content)
+    
+    key = f"qu-course-design/{course_id}/{module_id}/pre_processed_deliverables/retriever.txt"
+    await s3_file_manager.upload_file(f"{destination}/slide_content.txt", key)
 
-    Path(destination).mkdir(parents=True, exist_ok=True)
-
-    retriever.create_vector_store(slide_content, db_path=destination)
+    chabot_link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+key
+    return chabot_link
 
 
 async def upload_files(course_id, video_path, assessment_path, chatbot_path, module_id, has_assessment, has_chatbot):
@@ -451,10 +455,6 @@ async def upload_files(course_id, video_path, assessment_path, chatbot_path, mod
 
         if has_chatbot:
             logging.info(f"Uploading chatbot to s3 for module: {module_id}")
-            files = ["bm25_retriever.pkl", "faiss_retriever.pkl", "hybrid_db/index.faiss", "hybrid_db/index.pkl"]
-            for file in files:
-                await s3_client.upload_file(f"{chatbot_path}/{file}", f"{key}retriever/{file}")
-
             chatbot_link = "https://qucoursify.s3.us-east-1.amazonaws.com/retriever"
 
         else:
@@ -483,17 +483,18 @@ def update_module_with_deliverables(course_id, module_id, video_link, assessment
         ]
 
         for resource in module['pre_processed_structure']:
-            if resource["resource_type"] == "Module_Information":
+            if resource["resource_type"] == "Note":
                 
                 prev_location = resource["resource_link"]
+                prev_location_key = prev_location.split("/")[3] + "/" + "/".join(prev_location.split("/")[4:])
                 new_location = prev_location.replace("pre_processed_structure", "pre_processed_deliverables")
                 new_location_key = new_location.split("/")[3] + "/" + "/".join(new_location.split("/")[4:])
                 s3_client = S3FileManager()
-                s3_client.copy_file(prev_location, new_location_key)
+                s3_client.copy_file(prev_location_key, new_location_key)
                 new_location_link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+new_location_key
 
                 module["pre_processed_deliverables"].append({
-                    "resource_type": "Module_Information",
+                    "resource_type": "Note",
                     "resource_link": new_location_link,
                     "resource_name": f"{module_id}_module_info.md",
                     "resource_description": "Module Information",
@@ -518,7 +519,13 @@ def update_module_with_deliverables(course_id, module_id, video_link, assessment
             })
 
         if has_chatbot:
-            module['chatbot_link'] = chatbot_link
+            module["pre_processed_deliverables"].append({
+                "resource_type": "Chatbot",
+                "resource_link": chatbot_link,
+                "resource_name": f"Chatbot.txt",
+                "resource_description": "Chatbot text for creating the retriever",
+                "resource_id": ObjectId()
+            })
         
 
         module["status"] = "Deliverables Review"

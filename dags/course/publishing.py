@@ -27,7 +27,8 @@ Publishing artifacts consist of:
 4. append the artifacts to the appropriate fields
 5. update Mongodb with the changes.
 """
-
+from pathlib import Path
+import json
 from PIL import Image, ImageDraw, ImageFont
 from utils.mongodb_client import AtlasClient
 from bson import ObjectId
@@ -35,6 +36,7 @@ import logging
 from textwrap import wrap
 import os
 from utils.s3_file_manager import S3FileManager
+from utils.retriever import Retriever
 
 course_object = {
     "app_name": "",
@@ -59,24 +61,42 @@ course_object = {
 }
 
 
-def _update_modules(course_id, course):
+async def _update_modules(course_id, course):
+    logging.info(f"Updating modules for course: {course_id}")
     mongo_client = AtlasClient()
-    course_design = mongo_client.find("course_design", filter={"_id": ObjectId(course_id)})
-    modules = mongo_client.find("publishing_queue", filter={"course_id": ObjectId(course_id)})
+    course_design = mongo_client.find("course_design", filter={"_id": ObjectId(course_id)})[0]
+    module_objs = mongo_client.find("post_processed_deliverables", filter={"course_id": ObjectId(course_id)})
+
+    if len(module_objs) == 0:
+        raise Exception("No modules found for the course")
+    
+    module_ids = set([module["module_id"] for module in module_objs])
+
+    modules = []
+    for module in course_design['modules']:
+        if module['module_id'] in module_ids:
+            modules.append(module)
+    
+    if len(modules) == 0:
+        raise Exception("No modules found for the course")
 
     slide_links = []
     slide_names = []
     video_links = []
     module_ids = []
+    questions = []
     course_module_information = []
+    s3_file_manager = S3FileManager()
+    chatbot_text_complete = ""
 
     for module in modules:
+        logging.info(f"Updating module: {module['module_id']}")
         module_id = module["module_id"]
         module_ids.append(module_id)
-        module_obj = next((m for m in course_design.get("modules", []) if m.get("module_id") == ObjectId(module_id)), None)
-        slide_names.append(module_obj["module_name"])
-
-        for resource in module_obj['post_processed_deliverables']:
+        
+        slide_names.append(module["module_name"])
+        module['status'] = "Published"
+        for resource in module['pre_processed_deliverables']:
             if resource['resource_type'] == "Slide_Generated":
                 slide_link = resource['resource_link']
                 slide_links.append(slide_link)
@@ -89,34 +109,66 @@ def _update_modules(course_id, course):
                 )
             elif resource['resource_type'] == "Note":
                 notes_link = resource['resource_link']
-                with open(notes_link, "r") as f:
-                    course_module_information.append(f.read())
+                notes_key = notes_link.split("amazonaws.com/")[1]
+                notes_obj = s3_file_manager.get_object(notes_key)
+                notes = notes_obj["Body"].read().decode("utf-8")
+                course_module_information.append(notes)
+            elif resource['resource_type'] == "Assessment":
+                assessment_link = resource['resource_link']
+                assessment_key = assessment_link.split("amazonaws.com/")[1]
+                assessment_obj = s3_file_manager.get_object(assessment_key)
+                assessment = assessment_obj["Body"].read().decode("utf-8")
+                questions.append(assessment)
+            elif resource['resource_type'] == "Chatbot":
+                course["has_chatbot"] = True
+                chabot_link = resource['resource_link']
+                chatbot_key = chabot_link.split("amazonaws.com/")[1]
+                chatbot_obj = s3_file_manager.get_object(chatbot_key)
+                chatbot_text = chatbot_obj["Body"].read().decode("utf-8")
+                chatbot_text_complete += chatbot_text
     
+    if course["has_chatbot"]:
+        logging.info("Creating chatbot")
+        retriever = Retriever()
+        Path(f"output/{course_id}/retriever").mkdir(parents=True, exist_ok=True)
+        retriever.create_vector_store(chatbot_text_complete, f"output/{course_id}/retriever")
+        # Upload chatbot to s3
+        files = [f"output/{course_id}/retriever/bm25_retriever.pkl", f"output/{course_id}/retriever/faiss_retriever.pkl", f"output/{course_id}/retriever/hybrid_db/index.pkl", f"output/{course_id}/retriever/hybrid_db/index.faiss"]
+        file_keys = ["retriever/bm25_retriever.pkl", "retriever/faiss_retriever.pkl", "retriever/hybrid_db/index.pkl", "retriever/hybrid_db/index.faiss"]
+        for file, key in zip(files, file_keys):
+            await s3_file_manager.upload_file(file, f"qu-course-design/{course_id}/{key}")
+        chabot_link = f"https://qucoursify.s3.us-east-1.amazonaws.com/qu-course-design/{course_id}/retriever"
+        course["chatbot_link"] = chabot_link
+    
+
+    if len(questions) > 0:
+        logging.info("Creating quiz")
+        course['has_quiz'] = True
+        Path(f"output/{course_id}/quiz").mkdir(parents=True, exist_ok=True)
+        quiz_file = open(f"output/{course_id}/quiz/quiz.json", "w")
+        json.dump(questions, quiz_file)
+        quiz_file.close()
+        key = f"qu-course-design/{course_id}/quiz.json"
+        s3_client = S3FileManager()
+        s3_client.upload_file(f"output/{course_id}/quiz/quiz.json", key)
+        course["questions_file"] = "https://qucoursify.s3.us-east-1.amazonaws.com/" + key
+
+
     course["slides_links"] = slide_links
     course["course_names_slides"] = slide_names
     course["videos_links"] = video_links
     course["module_ids"] = module_ids
     course["course_module_information"] = course_module_information
     course["course_names_videos"] = slide_names
-
+    course_design['modules'] = modules
     
-    for module in modules:
-        module_id = module["module_id"]
-        for index, module_obj in enumerate(course_design.get("modules", [])):
-            if module_obj.get("module_id") == ObjectId(module_id):
-                course_design["modules"][index]["status"] = "Published"
-                break
-
-    # TODO merge assessments
-    # TODO merge chatbots
-    
-    
-    mongo_client.update("course_design", filter={"_id": ObjectId(course_id)}, update=course_design)
-    mongo_client.update("course_design", filter={"_id": ObjectId(course_id)}, update={"$set": {"status": "Published"}})
+    logging.info("Updating course design")
+    course_design['status'] = "Published"
+    mongo_client.update("course_design", filter={"_id": ObjectId(course_id)}, update={"$set": course_design})
 
     return course
 
-def _create_certificate(module_id, course_name):
+def _create_certificate(course_id, course_name):
     certificate = Image.open(open("dags/course/assets/QU-Certificate.jpg", "rb"))
 
     # Create an ImageDraw object to write on the image
@@ -166,11 +218,11 @@ def _create_certificate(module_id, course_name):
     draw_wrapped_text(draw, message_text, font_message, text_position_date, max_width_message, (0, 0, 0), align="left", line_spacing=10)
 
     # Save the modified image
-    output_path = f'output/{module_id}/quiz_certificate.jpg'
+    output_path = f'output/{course_id}/quiz_certificate.jpg'
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     certificate.save(output_path)
 
-    key = f"qu-course-design/{module_id}/quiz_certificate.jpg"
+    key = f"qu-course-design/{course_id}/quiz_certificate.jpg"
     s3_client = S3FileManager()
     s3_client.upload_file(output_path, key)
     
@@ -189,22 +241,12 @@ def handle_update_course(course_id):
     try:
         mongo_client = AtlasClient()
         course = mongo_client.find("courses", filter={"course_id": ObjectId(course_id)})
-        if not course:
-            handle_create_course(course_id)
-            return None
         
         course = course[0]
 
-        course_design = mongo_client.find("course_design", filter={"_id": ObjectId(course_id)})
-        if not course_design:
-            return "Course design not found"
-        
-        course_design = course_design[0]
-
         course = _update_modules(course_id, course)
         
-        mongo_client.update("courses", filter={"course_id": ObjectId(course_id)}, update=course)
-
+        mongo_client.update("courses", filter={"course_id": ObjectId(course_id)}, update={"$set": course})
         
         return True
     
@@ -235,6 +277,7 @@ def handle_create_course(course_id):
         if not course_design:
             return "Course design not found"
         
+        course['app_name'] = course_design["course_name"]
         course["app_image_location"] = course_design["course_image"]
         course["short_description"] = course_design["course_description"]
         course["home_page_introduction"] = course_design["course_description"]
@@ -249,14 +292,3 @@ def handle_create_course(course_id):
     except Exception as e:
         logging.error(f"Error in creating course: {e}")
 
-
-def publish_course(entry_id):
-    mongo_client = AtlasClient()
-    course_id = mongo_client.find("in_publishing_queue", filter={"_id": ObjectId(entry_id)})[0]["course_id"]
-    course = mongo_client.find("courses", filter={"course_id": ObjectId(course_id)})
-    if not course:
-        handle_update_course(course_id)
-    else:
-        handle_create_course(course_id)
-
-    return True

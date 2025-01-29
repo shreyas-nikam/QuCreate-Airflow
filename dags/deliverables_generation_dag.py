@@ -77,9 +77,9 @@ def generate_assessment_step(slide_content, module_id, **kwargs):
     assessment_file_path = f"output/{module_id}/questions.json"
     return assessment_file_path
 
-def generate_chatbot_step(slide_content, module_id, **kwargs):
+def generate_chatbot_step(slide_content, course_id, module_id, **kwargs):
     destination = f"output/{module_id}/retriever"
-    _generate_chatbot(slide_content, destination)
+    asyncio.run(_generate_chatbot(slide_content, destination, course_id, module_id))
     chatbot_file_path = f"output/{module_id}/retriever"
     return chatbot_file_path
 
@@ -202,7 +202,7 @@ with DAG(
     generate_chatbot_task = PythonOperator(
         task_id="generate_chatbot",
         python_callable=generate_chatbot_step,
-        op_args=["{{ task_instance.xcom_pull(task_ids='get_slide_content') }}", "{{ task_instance.xcom_pull(task_ids='get_entry_from_mongo')[1] }}"],
+        op_args=["{{ task_instance.xcom_pull(task_ids='get_slide_content') }}", "{{ task_instance.xcom_pull(task_ids='get_entry_from_mongo')[0] }}", "{{ task_instance.xcom_pull(task_ids='get_entry_from_mongo')[1] }}"],
         provide_context=True
     )
 

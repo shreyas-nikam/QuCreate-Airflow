@@ -1,24 +1,37 @@
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.utils.dates import days_ago
-from course.publishing import publish_course
 import asyncio
 from airflow.operators.empty import EmptyOperator
 from course.publishing import _update_modules, handle_update_course, handle_create_course
+from utils.mongodb_client import AtlasClient
+from bson.objectid import ObjectId
+from airflow.utils.edgemodifier import Label
 
 # Steps:
 # 1. Get the course id which is to be published.
 # 2. Update the course if it exists. Create a new course if it doesn't.
-# 3. Upda the modules with the new resources.
+# 3. Update the modules with the new resources.
 # 4. Update the status of the course to "Published"
 
 
-def process_publishing_request(**kwargs):
-    entry_id = kwargs["dag_run"].conf.get("entry_id")
+def get_course_id_task(entry_id, **kwargs):
+    mongo_client = AtlasClient()
     collection = "in_publishing_queue"
-    print(f"Processing entry with ID: {entry_id} from collection: {collection} for publishing.")
-    response = asyncio.run(publish_course(entry_id))
-    print(response)
+    entry = mongo_client.get_document_by_id(collection, entry_id)
+    course_id = entry.get("course_id")
+    return course_id
+
+def update_course_task(course_id, **kwargs):
+    handle_update_course(course_id)
+    return True
+
+def create_course_task(course_id, **kwargs):
+    handle_create_course(course_id)
+    return True
+
+   
+
 
 default_args = {
     'owner': 'airflow',
@@ -36,9 +49,47 @@ with DAG(
     schedule_interval=None,  # Triggered externally
     catchup=False,
 ) as dag:
-    pass
-    # process_publishing_request_task = PythonOperator(
-    #     task_id='process_publishing_request',
-    #     python_callable=process_publishing_request,
-    #     provide_context=True,
-    # )
+    
+    start = EmptyOperator(task_id="start")
+
+    get_course_id_step = PythonOperator(
+        task_id="get_course_id",
+        python_callable=get_course_id_task,
+        provide_context=True,
+        op_args=["{{ dag_run.conf.entry_id }}"]
+    )
+
+    def branch_on_course_id(course_id, **kwargs):
+        mongo_client = AtlasClient()
+        course = mongo_client.find("courses", filter={"course_id": ObjectId(course_id)})
+        if course:
+            return "update_course"
+        return "create_course"
+    
+    branch = PythonOperator(
+        task_id="branch_on_course_id",
+        python_callable=branch_on_course_id,
+        provide_context=True,
+        op_args=["{{ ti.xcom_pull(task_ids='get_course_id') }}"]
+    )
+
+    update_course_step = PythonOperator(
+        task_id="update_course",
+        python_callable=update_course_task,
+        provide_context=True,
+        op_args=["{{ ti.xcom_pull(task_ids='get_course_id') }}"]
+    )
+
+    create_course_step = PythonOperator(
+        task_id="create_course",
+        python_callable=create_course_task,
+        provide_context=True,
+        op_args=["{{ ti.xcom_pull(task_ids='get_course_id') }}"]
+    )
+
+
+    end = EmptyOperator(task_id="end")
+
+    start >> get_course_id_step >> branch
+    branch >> Label("Republish course") >> update_course_step >> end
+    branch >> Label("Create Course") >> create_course_step >> end
