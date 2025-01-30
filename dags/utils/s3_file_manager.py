@@ -133,7 +133,7 @@ class S3FileManager:
             return False
         
 
-    async def upload_file(self, file_path, key):
+    async def upload_file(self, file_path, key, content_type=None):
         """
         Upload a file to S3
 
@@ -145,7 +145,10 @@ class S3FileManager:
         bool: True if the file was uploaded successfully, False otherwise
         """
         try:
-            self.s3_client.upload_file(file_path, self.bucket_name, key)
+            if content_type:
+                self.s3_client.upload_file(file_path, self.bucket_name, key, ExtraArgs={'ContentType': content_type})
+            else:
+                self.s3_client.upload_file(file_path, self.bucket_name, key)
             self.make_object_public(key)
             return True
         except FileNotFoundError:

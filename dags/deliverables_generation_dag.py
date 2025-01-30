@@ -79,9 +79,8 @@ def generate_assessment_step(slide_content, module_id, **kwargs):
 
 def generate_chatbot_step(slide_content, course_id, module_id, **kwargs):
     destination = f"output/{module_id}/retriever"
-    asyncio.run(_generate_chatbot(slide_content, destination, course_id, module_id))
-    chatbot_file_path = f"output/{module_id}/retriever"
-    return chatbot_file_path
+    chatbot_link = asyncio.run(_generate_chatbot(slide_content, destination, course_id, module_id))
+    return chatbot_link
 
 def upload_files_step(course_id, video_path, assessment_file_path, chatbot_file_path, has_assessment, has_chatbot, module_id, **kwargs):
     video_link, assessment_link, chatbot_link = asyncio.run(upload_files(course_id, video_path, assessment_file_path, chatbot_file_path, module_id, has_assessment, has_chatbot))

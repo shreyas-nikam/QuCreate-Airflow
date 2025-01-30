@@ -27,6 +27,7 @@ Publishing artifacts consist of:
 4. append the artifacts to the appropriate fields
 5. update Mongodb with the changes.
 """
+import asyncio
 from pathlib import Path
 import json
 from PIL import Image, ImageDraw, ImageFont
@@ -60,22 +61,45 @@ course_object = {
     "disclaimer": "\nThis course contains content that has been partially or fully generated using artificial intelligence (AI) technology. While every effort has been made to ensure the accuracy and quality of the materials, please note that AI-generated content may not always reflect the latest developments, best practices, or personalized nuances within the field. We encourage you to critically evaluate the information presented and consult additional resources where necessary.\n"
 }
 
+async def _convert_to_pdf(course_id, module_id, slide_link):
+    # Steps:
+    # 1. Download the slide in a temp location
+    # 2. Convert the slide to pdf
+    # 3. Upload the pdf to s3
+    # 4. Return the link to the pdf
+    s3_file_manager = S3FileManager()
+    slide_key = slide_link.split("amazonaws.com/")[1]
+    with open(f"output/{module_id}/slide.pptx", "wb") as file:
+        slide = s3_file_manager.get_object(slide_key)
+        file.write(slide["Body"].read())
+    Path(f"output/{module_id}").mkdir(parents=True, exist_ok=True)
+    os.system(f"libreoffice --headless --convert-to pdf --outdir output/{module_id}/ output/{module_id}/slide.pptx")
+    
+    pdf_key = f"qu-course-design/{course_id}/{module_id}/post_processed_deliverables/slides.pdf"
+    await s3_file_manager.upload_file(f"output/{module_id}/slide.pdf", pdf_key, "application/pdf")
+
+    return f"https://qucoursify.s3.us-east-1.amazonaws.com/{pdf_key}"
+
+    
 
 async def _update_modules(course_id, course):
     logging.info(f"Updating modules for course: {course_id}")
     mongo_client = AtlasClient()
     course_design = mongo_client.find("course_design", filter={"_id": ObjectId(course_id)})[0]
-    module_objs = mongo_client.find("post_processed_deliverables", filter={"course_id": ObjectId(course_id)})
-
+    module_objs = mongo_client.find("post_processed_deliverables", filter={"course_id": course_id})
+    print(module_objs)
     if len(module_objs) == 0:
         raise Exception("No modules found for the course")
     
     module_ids = set([module["module_id"] for module in module_objs])
+    print(module_ids)
 
     modules = []
     for module in course_design['modules']:
-        if module['module_id'] in module_ids:
+        if str(module['module_id']) in module_ids:
             modules.append(module)
+
+    print(modules)
     
     if len(modules) == 0:
         raise Exception("No modules found for the course")
@@ -84,7 +108,7 @@ async def _update_modules(course_id, course):
     slide_names = []
     video_links = []
     module_ids = []
-    questions = []
+    questions = {}
     course_module_information = []
     s3_file_manager = S3FileManager()
     chatbot_text_complete = ""
@@ -99,34 +123,52 @@ async def _update_modules(course_id, course):
         for resource in module['pre_processed_deliverables']:
             if resource['resource_type'] == "Slide_Generated":
                 slide_link = resource['resource_link']
+                slide_link = await _convert_to_pdf(course_id, module_id, slide_link)
                 slide_links.append(slide_link)
+                logging.info(f"Slide link updated: {slide_link}")
             elif resource['resource_type'] == "Video":
                 video_link = resource['resource_link']
                 video_links.append(
                     f"""
-                    <div style='padding:56.25% 0 0 0;position:relative;'><iframe src='{video_link}?badge=0&amp;autopause=0&amp;player_id=0&amp;app_id=58479' frameborder='0' allow='autoplay; fullscreen; picture-in-picture; clipboard-write' style='position:absolute;top:0;left:0;width:100%;height:100%;' title='{module_obj["module_name"]}'></iframe></div><script src='https://player.vimeo.com/api/player.js'></script>
+                    <div style='padding:56.25% 0 0 0;position:relative;'><iframe src='{video_link}?badge=0&amp;autopause=0&amp;player_id=0&amp;app_id=58479' frameborder='0' allow='autoplay; fullscreen; picture-in-picture; clipboard-write' style='position:absolute;top:0;left:0;width:100%;height:100%;' title='{module['module_name']}'></iframe></div><script src='https://player.vimeo.com/api/player.js'></script>
                     """
                 )
+                logging.info(f"Video link updated: {video_link}")
             elif resource['resource_type'] == "Note":
+                logging.info("Updating notes")
                 notes_link = resource['resource_link']
+                logging.info(f"Notes link: {notes_link}")
                 notes_key = notes_link.split("amazonaws.com/")[1]
+                logging.info(f"Notes key: {notes_key}")
                 notes_obj = s3_file_manager.get_object(notes_key)
+
                 notes = notes_obj["Body"].read().decode("utf-8")
+                logging.info(f"Notes: {notes}")
                 course_module_information.append(notes)
             elif resource['resource_type'] == "Assessment":
+                logging.info("Updating assessment")
                 assessment_link = resource['resource_link']
+                logging.info(f"Assessment link: {assessment_link}")
                 assessment_key = assessment_link.split("amazonaws.com/")[1]
+                logging.info(f"Assessment key: {assessment_key}")
                 assessment_obj = s3_file_manager.get_object(assessment_key)
-                assessment = assessment_obj["Body"].read().decode("utf-8")
-                questions.append(assessment)
+                assessment = json.loads(assessment_obj["Body"].read().decode("utf-8"))
+                logging.info(f"Assessment: {assessment}")
+                questions[module["module_name"]] = assessment
+                logging.info(f"Questions: {questions}")
             elif resource['resource_type'] == "Chatbot":
                 course["has_chatbot"] = True
+                logging.info("Updating chatbot")
                 chabot_link = resource['resource_link']
+                logging.info(f"Chatbot link: {chabot_link}")
                 chatbot_key = chabot_link.split("amazonaws.com/")[1]
+                logging.info(f"Chatbot key: {chatbot_key}")
                 chatbot_obj = s3_file_manager.get_object(chatbot_key)
                 chatbot_text = chatbot_obj["Body"].read().decode("utf-8")
                 chatbot_text_complete += chatbot_text
-    
+                logging.info(f"Chatbot text: {chatbot_text}")   
+
+
     if course["has_chatbot"]:
         logging.info("Creating chatbot")
         retriever = Retriever()
@@ -139,7 +181,7 @@ async def _update_modules(course_id, course):
             await s3_file_manager.upload_file(file, f"qu-course-design/{course_id}/{key}")
         chabot_link = f"https://qucoursify.s3.us-east-1.amazonaws.com/qu-course-design/{course_id}/retriever"
         course["chatbot_link"] = chabot_link
-    
+        course["has_chatbot"] = False
 
     if len(questions) > 0:
         logging.info("Creating quiz")
@@ -150,7 +192,7 @@ async def _update_modules(course_id, course):
         quiz_file.close()
         key = f"qu-course-design/{course_id}/quiz.json"
         s3_client = S3FileManager()
-        s3_client.upload_file(f"output/{course_id}/quiz/quiz.json", key)
+        await s3_client.upload_file(f"output/{course_id}/quiz/quiz.json", key)
         course["questions_file"] = "https://qucoursify.s3.us-east-1.amazonaws.com/" + key
 
 
@@ -224,7 +266,7 @@ def _create_certificate(course_id, course_name):
 
     key = f"qu-course-design/{course_id}/quiz_certificate.jpg"
     s3_client = S3FileManager()
-    s3_client.upload_file(output_path, key)
+    asyncio.run(s3_client.upload_file(output_path, key))
     
     return "https://qucoursify.s3.us-east-1.amazonaws.com/" + key
 
@@ -244,7 +286,7 @@ def handle_update_course(course_id):
         
         course = course[0]
 
-        course = _update_modules(course_id, course)
+        course = asyncio.run(_update_modules(course_id, course))
         
         mongo_client.update("courses", filter={"course_id": ObjectId(course_id)}, update={"$set": course})
         
@@ -265,15 +307,22 @@ def handle_create_course(course_id):
     Update the course design with the status for the published courses in the course_design collection
     """
     try:
+        logging.info(f"Creating course: {course_id}")
         mongo_client = AtlasClient()
+
         course = course_object
+
+        print(course)
         course["course_id"] = ObjectId(course_id)
 
-        certificate_path = _create_certificate()
+        course_design = mongo_client.find("course_design", filter={"_id": ObjectId(course_id)})[0]
+
+        logging.info("Creating certificate")
+
+        certificate_path = _create_certificate(course_id, course_design["course_name"])
 
         course["certificate_path"] = certificate_path
-
-        course_design = mongo_client.find("course_design", filter={"_id": ObjectId(course_id)})
+        
         if not course_design:
             return "Course design not found"
         
@@ -282,8 +331,8 @@ def handle_create_course(course_id):
         course["short_description"] = course_design["course_description"]
         course["home_page_introduction"] = course_design["course_description"]
      
-
-        course = _update_modules(course_id, course)
+        logging.info("Updating modules")
+        course = asyncio.run(_update_modules(course_id, course))
 
         mongo_client.insert("courses", course)
         
@@ -291,4 +340,3 @@ def handle_create_course(course_id):
     
     except Exception as e:
         logging.error(f"Error in creating course: {e}")
-

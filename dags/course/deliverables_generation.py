@@ -455,7 +455,7 @@ async def upload_files(course_id, video_path, assessment_path, chatbot_path, mod
 
         if has_chatbot:
             logging.info(f"Uploading chatbot to s3 for module: {module_id}")
-            chatbot_link = "https://qucoursify.s3.us-east-1.amazonaws.com/retriever"
+            chatbot_link = chatbot_path
 
         else:
             chatbot_link = ""
@@ -490,6 +490,7 @@ def update_module_with_deliverables(course_id, module_id, video_link, assessment
                 new_location = prev_location.replace("pre_processed_structure", "pre_processed_deliverables")
                 new_location_key = new_location.split("/")[3] + "/" + "/".join(new_location.split("/")[4:])
                 s3_client = S3FileManager()
+                logging.info(f"Copying file from {prev_location_key} to {new_location_key}")
                 s3_client.copy_file(prev_location_key, new_location_key)
                 new_location_link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+new_location_key
 
@@ -535,3 +536,4 @@ def update_module_with_deliverables(course_id, module_id, video_link, assessment
         
     except Exception as e:
         logging.error(f"Error in updating module with deliverables: {e}")
+
