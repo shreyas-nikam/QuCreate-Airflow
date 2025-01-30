@@ -6,6 +6,7 @@ Deliverables Consists of:
 4. Assessment: Assessment generated using the content from the previous step.
 """
 import ast
+import vimeo
 import os
 from pydub import AudioSegment
 import subprocess
@@ -432,6 +433,30 @@ async def _generate_chatbot(slide_content, destination, course_id, module_id):
     chabot_link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+key
     return chabot_link
 
+def upload_video_to_vimeo(video_path, module_name):
+    """
+    Upload the video to vimeo
+    """
+    try:
+        logging.info(f"Uploading video to vimeo: {video_path}")
+        vimeo_client = vimeo.VimeoClient(
+            token=os.getenv("VIMEO_ACCESS_TOKEN"),
+            key=os.getenv("VIMEO_CLIENT_ID"),
+            secret=os.getenv("VIMEO_CLIENT_SECRET")
+        )
+        uri = vimeo_client.upload(video_path, data={
+            'name': module_name,
+            'description': 'AI Generated video for the module.',
+            'privacy': {
+                'view': 'anybody'
+            }
+        })
+        video_id = uri.split("/")[-1]
+        return video_id
+    except Exception as e:
+        logging.error(f"Error in uploading video to vimeo: {e}")
+        return None
+
 
 async def upload_files(course_id, video_path, assessment_path, chatbot_path, module_id, has_assessment, has_chatbot):
     """
@@ -440,11 +465,12 @@ async def upload_files(course_id, video_path, assessment_path, chatbot_path, mod
     try:
         logging.info(f"Uploading video to s3 for module: {module_id}")
         s3_client = S3FileManager()
+        course, module = _get_course_and_module(course_id, module_id)
         key = f"qu-course-design/{course_id}/{module_id}/pre_processed_deliverables/"
-        video_key = key + "video.mp4"
-        await s3_client.upload_video(video_path, video_key)
-        video_link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+video_key
 
+        video_id = upload_video_to_vimeo(video_path, module['module_name'])
+        video_link = f"""<div style="padding:56.25% 0 0 0;position:relative;"><iframe src="https://player.vimeo.com/video/{video_id}?badge=0&amp;autopause=0&amp;player_id=0&amp;app_id=58479" frameborder="0" allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media" style="position:absolute;top:0;left:0;width:100%;height:100%;" title="Fundamental Principles of Value Creation"></iframe></div><script src="https://player.vimeo.com/api/player.js"></script>"""
+        
         if has_assessment:
             logging.info(f"Uploading assessment to s3 for module: {module_id}")
             assessment_key = key + f"{module_id}_assessment.json"
