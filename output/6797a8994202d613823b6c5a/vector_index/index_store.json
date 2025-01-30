@@ -1,8 +1,0 @@
-{
-    "index_store/data": {
-        "6797a8994202d613823b6c5a_vector_index": {
-            "__type__": "vector_store",
-            "__data__": "{\"index_id\": \"6797a8994202d613823b6c5a_vector_index\", \"summary\": null, \"nodes_dict\": {\"71e24d1c-caaa-4724-83a6-b41a7e56e940\": \"71e24d1c-caaa-4724-83a6-b41a7e56e940\", \"5d07ebb3-84a1-49fc-8ee0-4eafc87eebfa\": \"5d07ebb3-84a1-49fc-8ee0-4eafc87eebfa\", \"7cc80b28-a903-4a69-a2cd-542a87f33ccc\": \"7cc80b28-a903-4a69-a2cd-542a87f33ccc\", \"71e88bea-394e-49fb-b97b-78a54029463a\": \"71e88bea-394e-49fb-b97b-78a54029463a\", \"2daf13c9-38ce-43a6-a7ce-61733b354311\": \"2daf13c9-38ce-43a6-a7ce-61733b354311\", \"6c5bed0c-232e-43a2-b8ae-0583b296cc16\": \"6c5bed0c-232e-43a2-b8ae-0583b296cc16\", \"fbdd2821-190d-40cd-b30b-2848c6f0b697\": \"fbdd2821-190d-40cd-b30b-2848c6f0b697\", \"7513fdec-eb1d-465e-8307-829167148f26\": \"7513fdec-eb1d-465e-8307-829167148f26\", \"ae0c40bf-f36b-467b-bae5-1366d90fe3f8\": \"ae0c40bf-f36b-467b-bae5-1366d90fe3f8\"}, \"doc_id_dict\": {}, \"embeddings_dict\": {}}"
-        }
-    }
-}
