@@ -25,6 +25,9 @@ sudo apt install libreoffice
   LLAMAPARSE_API_KEY=
   AIRFLOW_USERNAME=
   AIRFLOW_PASSWORD=
+    VIMEO_ACCESS_TOKEN=
+    VIMEO_CLIENT_SECRET=
+    VIMEO_CLIENT_ID=
   ```
 
 3. Install the required packages using `pip install -r requirements.txt`
