@@ -48,8 +48,12 @@ def parse_files_and_create_index_task(module_id, file_path, **kwargs):
     save_index(vector_index, Path("output") / module_id / "vector_index")
 
 
-def generate_outline_task(module_id, instructions, **kwargs):
+def generate_outline_task(course_id, module_id, instructions, **kwargs):
     logging.info("Generating outline")
+    course, module = _get_course_and_module(course_id, module_id)
+    module_name = module.get("module_name")
+    module_description = module.get("module_description")
+    instructions += f"\n\nModule Name: {module_name}\nModule Description: {module_description}"
     outline = asyncio.run(generate_outline(module_id, instructions))
     logging.info("Outline generated")
     return outline
@@ -141,8 +145,9 @@ with DAG(
     generate_outline_step = PythonOperator(
         task_id='generate_outline',
         python_callable=generate_outline_task,
-        op_args=["{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[1] }}",
-                 "{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[2] }}"],
+        op_args=["{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[0] }}",
+                    "{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[1] }}",
+                    "{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[2] }}"],
         provide_context=True
     )
 
