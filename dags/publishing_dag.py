@@ -6,6 +6,7 @@ from course.publishing import handle_update_course, handle_create_course
 from utils.mongodb_client import AtlasClient
 from bson.objectid import ObjectId
 from airflow.utils.edgemodifier import Label
+from airflow.utils.trigger_rule import TriggerRule
 
 # Steps:
 # 1. Get the course ID to be published.
@@ -110,14 +111,16 @@ with DAG(
         task_id="delete_entry",
         python_callable=delete_entry_task,
         provide_context=True,
-        op_args=["{{ dag_run.conf.entry_id }}"]
+        op_args=["{{ dag_run.conf.entry_id }}"],
+        trigger_rule=TriggerRule.ONE_SUCCESS
     )
 
     end = EmptyOperator(task_id="end")
 
-    # ✅ FIXED Dependencies
     start >> get_course_id_step >> branch
     branch >> Label(
-        "Update Course") >> update_course_step >> delete_entry_step >> end
+        "Update Course") >> update_course_step
     branch >> Label(
-        "Create Course") >> create_course_step >> delete_entry_step >> end
+        "Create Course") >> create_course_step
+
+    [update_course_step, create_course_step] >> delete_entry_step >> end

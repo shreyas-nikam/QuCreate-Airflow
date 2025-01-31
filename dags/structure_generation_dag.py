@@ -1,3 +1,4 @@
+import datetime
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.utils.dates import days_ago
@@ -80,6 +81,26 @@ def delete_entry_from_mongodb_task(course_id, module_id, **kwargs):
     mongodb_client.delete("in_structure_generation_queue", filter={
                           "course_id": course_id, "module_id": module_id})
     logging.info("Entry deleted")
+    return True
+
+
+def add_notification_task(entry_id, course_id, module_id, **kwargs):
+
+    _, module = _get_course_and_module(course_id, module_id)
+    message = f"Module {module["module_name"]} is ready for Structure Review."
+
+    mongodb_client = AtlasClient()
+    notifications_object = {
+        "username": "eca33ce0-62e5-41f8-88b0-1cf558fa7c81",
+        "creation_date": datetime.datetime.now(),
+        "type": "course_module",
+        "message": message,
+        "read": False,
+        "module_id": module_id,
+        "project_id": course_id
+    }
+    mongodb_client.insert("notifications", notifications_object)
+
     return True
 
 
@@ -179,6 +200,14 @@ with DAG(
         provide_context=True
     )
 
+    add_notification_step = PythonOperator(
+        task_id="add_notification",
+        python_callable=add_notification_task,
+        op_args=["{{ dag_run.conf.entry_id }}", "{{ task_instance.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
+                 "{{ task_instance.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}"],
+        provide_context=True
+    )
+
     end = EmptyOperator(task_id="end")
 
-    start >> fetch_details_from_mongo_step >> get_resource_link_step >> extract_content_step >> generate_pptx_step >> add_transcript_to_pptx_step >> save_file_to_s3_step >> update_slide_entry_step >> delete_entry_from_mongodb_step >> end
+    start >> fetch_details_from_mongo_step >> get_resource_link_step >> extract_content_step >> generate_pptx_step >> add_transcript_to_pptx_step >> save_file_to_s3_step >> update_slide_entry_step >> delete_entry_from_mongodb_step >> add_notification_step >> end

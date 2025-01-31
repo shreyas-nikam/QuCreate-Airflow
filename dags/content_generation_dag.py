@@ -1,3 +1,4 @@
+import datetime
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.operators.empty import EmptyOperator
@@ -132,13 +133,33 @@ def update_mongodb_with_resources_step(course_id, module_id, slide_output_link, 
     return "Content generated successfully"
 
 
-def delete_entry_from_mongo(entry_id, **kwargs):
+def delete_entry_from_mongo_step(entry_id, **kwargs):
     logging.info(f"Deleting entry from MongoDB for entry_id: {entry_id}")
     mongodb_client = AtlasClient()
     mongodb_client.delete("in_content_generation_queue",
                           filter={"_id": ObjectId(entry_id)})
     logging.info(f"Entry deleted from MongoDB for entry_id: {entry_id}")
     return "Entry deleted successfully"
+
+
+def add_notification_step(entry_id, course_id, module_id, **kwargs):
+
+    _, module = _get_course_and_module(course_id, module_id)
+    message = f"Module {module["module_name"]} is ready for Content Review."
+
+    mongodb_client = AtlasClient()
+    notifications_object = {
+        "username": "eca33ce0-62e5-41f8-88b0-1cf558fa7c81",
+        "creation_date": datetime.datetime.now(),
+        "type": "course_module",
+        "message": message,
+        "read": False,
+        "module_id": module_id,
+        "project_id": course_id
+    }
+    mongodb_client.insert("notifications", notifications_object)
+
+    return True
 
 
 default_args = {
@@ -219,12 +240,21 @@ with DAG(
 
     delete_entry_from_mongo_task = PythonOperator(
         task_id='delete_entry_from_mongo',
-        python_callable=delete_entry_from_mongo,
+        python_callable=delete_entry_from_mongo_step,
         op_args=[
             "{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[0] }}"],
+        provide_context=True
+    )
+    
+    add_notification_task = PythonOperator(
+        task_id='add_notification',
+        python_callable=add_notification_step,
+        op_args=["{{ dag_run.conf['entry_id'] }}",
+                 "{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[0] }}",
+                 "{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[1] }}"],
         provide_context=True
     )
 
     end = EmptyOperator(task_id="end")
 
-    start >> fetch_entry >> fetch_outline_task >> generate_slides_task >> generate_module_information_task >> write_content_to_file_task >> upload_content_to_s3_task >> update_mongodb_with_resources_task >> delete_entry_from_mongo_task >> end
+    start >> fetch_entry >> fetch_outline_task >> generate_slides_task >> generate_module_information_task >> write_content_to_file_task >> upload_content_to_s3_task >> update_mongodb_with_resources_task >> delete_entry_from_mongo_task >> add_notification_task >> end

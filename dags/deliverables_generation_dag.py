@@ -1,3 +1,4 @@
+import datetime
 import ast
 from airflow import DAG
 from airflow.operators.python import PythonOperator
@@ -114,6 +115,27 @@ def delete_entry_from_mongodb_step(entry_id, **kwargs):
     mongo_client.delete("in_deliverables_generation_queue",
                         filter={"_id": ObjectId(entry_id)})
     return "Entry deleted"
+
+
+def add_notification_step(entry_id, course_id, module_id, **kwargs):
+
+    _, module = _get_course_and_module(course_id, module_id)
+    message = f"Module {module["module_name"]
+                        } is ready for Deliverables Review."
+
+    mongodb_client = AtlasClient()
+    notifications_object = {
+        "username": "eca33ce0-62e5-41f8-88b0-1cf558fa7c81",
+        "creation_date": datetime.datetime.now(),
+        "type": "course_module",
+        "message": message,
+        "read": False,
+        "module_id": module_id,
+        "project_id": course_id
+    }
+    mongodb_client.insert("notifications", notifications_object)
+
+    return True
 
 
 default_args = {
@@ -284,6 +306,17 @@ with DAG(
         provide_context=True
     )
 
+    add_notification_task = PythonOperator(
+        task_id="add_notification",
+        python_callable=add_notification_step,
+        op_args=[
+            "{{ task_instance.xcom_pull(task_ids='get_entry_from_mongo')[0] }}",
+            "{{ task_instance.xcom_pull(task_ids='get_entry_from_mongo')[0] }}",
+            "{{ task_instance.xcom_pull(task_ids='get_entry_from_mongo')[1] }}"
+        ],
+        provide_context=True
+    )
+
     end = EmptyOperator(task_id="end")
 
     # Task dependencies
@@ -296,4 +329,4 @@ with DAG(
     branch_task >> Label("Skip Assessment and Chatbot") >> join_task
 
     # Ensure upload_files_task runs only after all preceding tasks
-    join_task >> upload_files_task >> update_module_with_deliverables_task >> delete_entry_from_mongo_task >> end
+    join_task >> upload_files_task >> update_module_with_deliverables_task >> delete_entry_from_mongo_task >> add_notification_task >> end
