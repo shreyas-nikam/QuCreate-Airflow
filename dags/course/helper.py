@@ -1,3 +1,5 @@
+from utils.llm import LLM
+import json
 import asyncio
 from typing import Any, List
 from llama_index.core.llms.function_calling import FunctionCallingLLM
@@ -55,7 +57,8 @@ llama_index.core.set_global_handler(
     "arize_phoenix", endpoint="https://llamatrace.com/v1/traces"
 )
 
-embed_model = OpenAIEmbedding(model="text-embedding-3-large", api_key=OPENAI_KEY)
+embed_model = OpenAIEmbedding(
+    model="text-embedding-3-large", api_key=OPENAI_KEY)
 llm = OpenAI(model=os.getenv("OPENAI_MODEL"), api_key=OPENAI_KEY)
 
 Settings.embed_model = embed_model
@@ -70,11 +73,13 @@ parser = LlamaParse(
     fast_mode=True,
 )
 
+
 def get_page_number(file_name):
     match = re.search(r"-page-(\d+)\.jpg$", str(file_name))
     if match:
         return int(match.group(1))
     return 0
+
 
 def _get_sorted_image_files(image_dir):
     # TODO change to s3 locations
@@ -82,6 +87,7 @@ def _get_sorted_image_files(image_dir):
     raw_files = [f for f in list(Path(image_dir).iterdir()) if f.is_file()]
     sorted_files = sorted(raw_files, key=get_page_number)
     return sorted_files
+
 
 def get_text_nodes(json_dicts, file_path):
     """Split docs into nodes, by separator."""
@@ -92,38 +98,42 @@ def get_text_nodes(json_dicts, file_path):
             md_texts.append(d["md"])
         else:
             text = d["text"]
-            cleaned_text = re.sub(r'[ \t]+', ' ', text)  # Replace multiple spaces/tabs with a single space
-            cleaned_text = re.sub(r'\n\s*\n', '\n', cleaned_text)  # Remove extra blank lines   
+            # Replace multiple spaces/tabs with a single space
+            cleaned_text = re.sub(r'[ \t]+', ' ', text)
+            # Remove extra blank lines
+            cleaned_text = re.sub(r'\n\s*\n', '\n', cleaned_text)
             md_texts.append(cleaned_text)
         chunk_metadata = {
             "page_num": d["page"],
             "parsed_text_markdown": md_texts[-1],
             "file_path": str(file_path),
-            
+
         }
         if "images" in d:
             image_paths = [img['path'] for img in d["images"]]
             chunk_metadata["image_paths"] = image_paths
-            
+
         node = TextNode(
             text="",
             metadata=chunk_metadata,
         )
-    
+
         nodes.append(node)
 
     return nodes
 
+
 def parse_files(module_id, file_path, download_path):
-    file_paths = [file_path for file_path in Path(file_path).iterdir() if file_path.suffix == ".pdf"]
-    
+    file_paths = [file_path for file_path in Path(
+        file_path).iterdir() if file_path.suffix == ".pdf"]
+
     file_dicts = {}
 
-    
     for file_path in file_paths:
         file_base = Path(file_path).stem
         full_file_path = file_path
         md_json_objs = parser.get_json_result(file_path)
+        print(md_json_objs)
         json_dicts = md_json_objs[0]["pages"]
 
         image_path = str(Path(download_path) / file_base)
@@ -142,7 +152,6 @@ def parse_files(module_id, file_path, download_path):
         all_text_nodes.extend(text_nodes)
         text_nodes_dict[file_path] = text_nodes
 
-
     output_pickle_path = Path("output") / module_id / "text_nodes_pickle.pkl"
     pickle.dump(text_nodes_dict, open(output_pickle_path, "wb"))
 
@@ -151,19 +160,22 @@ def parse_files(module_id, file_path, download_path):
 
     vector_index = VectorStoreIndex(all_text_nodes)
     vector_index.set_index_id(f"{module_id}_vector_index")
-        
+
     return vector_index
+
 
 def save_index(vector_index: VectorStoreIndex, vector_index_path):
     vector_index.storage_context.persist(persist_dir=vector_index_path)
-    
+
+
 def load_indexes(module_id):
     """
     The index_id here is going to be the module id
     """
 
-    text_nodes_dict = pickle.load(open(Path("output") / module_id / "text_nodes_pickle.pkl", "rb"))
-    
+    text_nodes_dict = pickle.load(
+        open(Path("output") / module_id / "text_nodes_pickle.pkl", "rb"))
+
     all_text_nodes = []
     for file_path, text_nodes in text_nodes_dict.items():
         all_text_nodes.extend(text_nodes)
@@ -174,7 +186,8 @@ def load_indexes(module_id):
 
     path = Path("output") / module_id / "vector_index"
     storage_context = StorageContext.from_defaults(persist_dir=path)
-    vector_index = load_index_from_storage(storage_context, index_id=f"{module_id}_vector_index")
+    vector_index = load_index_from_storage(
+        storage_context, index_id=f"{module_id}_vector_index")
 
     return vector_index, summary_indexes
 
@@ -193,7 +206,7 @@ def chunk_retriever_fn(query: str, vector_index) -> List[NodeWithScore]:
 
 
 def _get_document_nodes(
-    nodes: List[NodeWithScore], 
+    nodes: List[NodeWithScore],
     summary_indexes: dict,
     top_n: int = 5
 ) -> List[NodeWithScore]:
@@ -216,7 +229,6 @@ def _get_document_nodes(
     # Take top_n file paths
     top_file_paths = [path for path, score in sorted_file_paths[:top_n]]
 
-
     # use summary index to get nodes from all file paths
     all_nodes = []
     for file_path in top_file_paths:
@@ -226,6 +238,7 @@ def _get_document_nodes(
         )
 
     return all_nodes
+
 
 def doc_retriever_fn(query: str, index, summary_indexes) -> float:
     """Document retriever that retrieves entire documents from the corpus.
@@ -237,7 +250,6 @@ def doc_retriever_fn(query: str, index, summary_indexes) -> float:
     retriever = index.as_retriever(similarity_top_k=5)
     nodes = retriever.retrieve(query)
     return _get_document_nodes(nodes, summary_indexes)
-
 
 
 class TextBlock(BaseModel):
@@ -263,6 +275,7 @@ class OutlineOutput(BaseModel):
         ..., description="A list of text and image blocks."
     )
 
+
 class SlideOutput(BaseModel):
     """Data model for a slide.
 
@@ -271,8 +284,10 @@ class SlideOutput(BaseModel):
     """
 
     slide_header: str = Field(..., description="The header for the slide.")
-    slide_content: str = Field(..., description="The content for the slide in markdown bullet point format. Should be 3-5 bullet points starting with -. Could also be links to images in markdown format. You can also add mermaid diagrams in mardown format to explain the concept.")
-    speaker_notes: str = Field(..., description="The speaker notes for the slide.")
+    slide_content: str = Field(..., description="The content for the slide.")
+    speaker_notes: str = Field(...,
+                               description="The speaker notes for the slide.")
+
 
 class ModuleInformationOutput(BaseModel):
     """Data model for module information.
@@ -281,21 +296,27 @@ class ModuleInformationOutput(BaseModel):
 
     """
 
-    module_information: str = Field(..., description="The module information summarized in 2 lines and 3-5 bullet points in markdown format.")
+    module_information: str = Field(
+        ..., description="The module information summarized in 2 lines and 3-5 bullet points in markdown format.")
+
 
 prompt_handler = PromptHandler()
 outline_system_prompt = prompt_handler.get_prompt("GET_OUTLINE_PROMPT")
 slide_system_prompt = prompt_handler.get_prompt("GET_SLIDE_PROMPT")
-module_information_system_prompt = prompt_handler.get_prompt("CONTENT_TO_SUMMARY_PROMPT")
+module_information_system_prompt = prompt_handler.get_prompt(
+    "CONTENT_TO_SUMMARY_PROMPT")
 
-outline_gen_llm = OpenAI(model=os.getenv("OPENAI_MODEL"), system_prompt=outline_system_prompt, api_key=OPENAI_KEY)
-slide_gen_llm = OpenAI(model=os.getenv("OPENAI_MODEL"), system_prompt=slide_system_prompt, api_key=OPENAI_KEY)
-module_information_gen_llm = OpenAI(model=os.getenv("OPENAI_MODEL"), system_prompt=module_information_system_prompt, api_key=OPENAI_KEY)
+outline_gen_llm = OpenAI(model=os.getenv(
+    "OPENAI_MODEL"), system_prompt=outline_system_prompt, api_key=OPENAI_KEY)
+slide_gen_llm = OpenAI(model=os.getenv("OPENAI_MODEL"),
+                       system_prompt=slide_system_prompt, api_key=OPENAI_KEY)
+module_information_gen_llm = OpenAI(model=os.getenv(
+    "OPENAI_MODEL"), system_prompt=module_information_system_prompt, api_key=OPENAI_KEY)
 
 outline_gen_sllm = llm.as_structured_llm(output_cls=OutlineOutput)
 slide_gen_sllm = llm.as_structured_llm(output_cls=SlideOutput)
-module_information_gen_sllm = llm.as_structured_llm(output_cls=ModuleInformationOutput)
-
+module_information_gen_sllm = llm.as_structured_llm(
+    output_cls=ModuleInformationOutput)
 
 
 class InputEvent(Event):
@@ -308,6 +329,7 @@ class ChunkRetrievalEvent(Event):
 
 class DocRetrievalEvent(Event):
     tool_call: ToolSelection
+
 
 class OutputGenerationEvent(Event):
     pass
@@ -438,30 +460,24 @@ class SlidesGenerationAgent(Workflow):
 
         return StopEvent(result={"response": response})
 
- 
-
-
 
 async def generate_outline(module_id, instructions):
     logging.info("Loading index")
     vector_index, summary_indexes = load_indexes(module_id)
     logging.info("Index loaded")
-   
+
     query_engine = vector_index.as_query_engine(
         similarity_top_k=5,
         llm=outline_gen_llm,
     )
-    logging.info("Instructions for outline generation"+instructions)
-    response = query_engine.query(instructions+" for the module: Augmentation of LLM Prompt.")
+    logging.info("Instructions for outline generation:\n"+instructions)
+    response = query_engine.query(instructions)
     response = response.response
-    response = response.replace("```markdown", "").replace("```", "").replace("```", "").replace("markdown", "")
+    response = response.replace("```markdown", "").replace(
+        "```", "").replace("```", "").replace("markdown", "")
     logging.info("Response for agent's output: "+response)
 
     return response
-
-import json
-from utils.llm import LLM
-
 
 
 def _break_outline(outline):
@@ -481,8 +497,10 @@ async def get_slides(module_id, outline):
     vector_index, summary_indexes = load_indexes(module_id)
 
     logging.info("Creating tools")
-    chunk_retriever_tool = FunctionTool.from_defaults(fn=lambda query: chunk_retriever_fn(query, vector_index), name="chunk_retriever")
-    doc_retriever_tool = FunctionTool.from_defaults(fn=lambda query: doc_retriever_fn(query, vector_index, summary_indexes), name="doc_retriever")
+    chunk_retriever_tool = FunctionTool.from_defaults(
+        fn=lambda query: chunk_retriever_fn(query, vector_index), name="chunk_retriever")
+    doc_retriever_tool = FunctionTool.from_defaults(fn=lambda query: doc_retriever_fn(
+        query, vector_index, summary_indexes), name="doc_retriever")
 
     agent = SlidesGenerationAgent(
         chunk_retriever_tool=chunk_retriever_tool,
@@ -501,24 +519,23 @@ async def get_slides(module_id, outline):
     for section in sections:
         logging.info("Section: "+section)
         response = await agent.run(input="Help me get the slide header, slide content and the speaker notes for ONE SLIDE for the following topic after retrieving relevant information to the following topic from the tools. The slide header should be short and descriptive. The slide content should be descriptive and have 3-5 bullet points. The speaker notes should be as if presenting the topic on teh slides based on the slide content and should be in a continuous flow.\n"+section)
-        
+
         slides.append({
             "slide_header": response['response'].response.slide_header,
             "slide_content": response['response'].response.slide_content,
             "speaker_notes": response['response'].response.speaker_notes
         })
 
-
     return slides
 
 
-       
 async def get_module_information(module_id, outline):
-    
+
     # generate teh module information using an llm
     prompt = PromptHandler().get_prompt("GET_MODULE_INFORMATION_PROMPT")
     llm = LLM()
-    response = llm.get_response(prompt+str(outline).replace("{", "{{").replace("}", "}}"))
+    response = llm.get_response(
+        prompt+str(outline).replace("{", "{{").replace("}", "}}"))
     print(response)
-    
+
     return response

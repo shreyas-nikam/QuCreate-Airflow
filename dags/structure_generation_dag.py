@@ -22,19 +22,22 @@ from bson.objectid import ObjectId
 import logging
 from utils.s3_file_manager import S3FileManager
 
+
 def fetch_details_from_mongo_task(entry_id, **kwargs):
     logging.info(f"Fetching details for entry with ID: {entry_id}")
     entry_id = kwargs["dag_run"].conf.get("entry_id")
     mongodb_client = AtlasClient()
-    entry = mongodb_client.find("in_structure_generation_queue", filter={"_id": ObjectId(entry_id)})
+    entry = mongodb_client.find("in_structure_generation_queue", filter={
+                                "_id": ObjectId(entry_id)})
     if not entry:
         return "Entry not found"
-    
+
     entry = entry[0]
     course_id = entry.get("course_id")
     module_id = entry.get("module_id")
-    
+
     return course_id, module_id
+
 
 def get_resource_link_task(course_id, module_id, **kwargs):
     _, module = _get_course_and_module(course_id, module_id)
@@ -44,29 +47,40 @@ def get_resource_link_task(course_id, module_id, **kwargs):
 
 
 def extract_content_task(module_name, slide_content_link, **kwargs):
-    slide_content_key = slide_content_link.split("/")[3] + "/" + "/".join(slide_content_link.split("/")[4:])
+    slide_content_key = slide_content_link.split(
+        "/")[3] + "/" + "/".join(slide_content_link.split("/")[4:])
     logging.info(f"Extracting content from: {slide_content_key}")
     markdown, transcript = _extract_content(module_name, slide_content_key)
     return markdown, transcript
+
 
 def generate_pptx_task(markdown, module_id, **kwargs):
     pptx_file_path = _generate_pptx(markdown, module_id)
     return pptx_file_path
 
+
 def add_transcript_to_pptx_task(pptx_file_path, transcript, **kwargs):
     pptx_file = _add_transcript_to_pptx(pptx_file_path, transcript)
     return pptx_file
+
 
 def save_file_to_s3_task(pptx_file, course_id, module_id, **kwargs):
     key = f"qu-course-design/{course_id}/{module_id}/structure.pptx"
     resource_link = asyncio.run(_save_file_to_s3(pptx_file, key))
     return resource_link
 
+
 def update_slide_entry_task(course_id, module_id, resource_link, **kwargs):
     return _update_slide_entry(course_id, module_id, resource_link)
 
-    
 
+def delete_entry_from_mongodb_task(course_id, module_id, **kwargs):
+    logging.info("Deleting entry from MongoDB")
+    mongodb_client = AtlasClient()
+    mongodb_client.delete("in_structure_generation_queue", filter={
+                          "course_id": course_id, "module_id": module_id})
+    logging.info("Entry deleted")
+    return True
 
 
 default_args = {
@@ -85,7 +99,7 @@ with DAG(
     schedule_interval=None,  # Triggered externally
     catchup=False,
 ) as dag:
-    
+
     start = EmptyOperator(task_id="start")
 
     # Fetch the entry from MongoDB
@@ -102,7 +116,8 @@ with DAG(
     get_resource_link_step = PythonOperator(
         task_id='get_resource_link',
         python_callable=get_resource_link_task,
-        op_args=["{{ task_instance.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}", "{{ task_instance.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}"],
+        op_args=["{{ task_instance.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
+                 "{{ task_instance.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}"],
         provide_context=True
     )
 
@@ -111,7 +126,8 @@ with DAG(
     extract_content_step = PythonOperator(
         task_id='extract_content',
         python_callable=extract_content_task,
-        op_args=["{{ task_instance.xcom_pull(task_ids='get_resource_link')[0] }}", "{{ task_instance.xcom_pull(task_ids='get_resource_link')[1] }}"],
+        op_args=["{{ task_instance.xcom_pull(task_ids='get_resource_link')[0] }}",
+                 "{{ task_instance.xcom_pull(task_ids='get_resource_link')[1] }}"],
         provide_context=True
     )
 
@@ -120,7 +136,8 @@ with DAG(
     generate_pptx_step = PythonOperator(
         task_id='generate_pptx',
         python_callable=generate_pptx_task,
-        op_args=["{{ task_instance.xcom_pull(task_ids='extract_content')[0] }}", "{{ task_instance.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}"],
+        op_args=["{{ task_instance.xcom_pull(task_ids='extract_content')[0] }}",
+                 "{{ task_instance.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}"],
         provide_context=True
     )
 
@@ -129,7 +146,8 @@ with DAG(
     add_transcript_to_pptx_step = PythonOperator(
         task_id='add_transcript_to_pptx',
         python_callable=add_transcript_to_pptx_task,
-        op_args=["{{ task_instance.xcom_pull(task_ids='generate_pptx') }}", "{{ task_instance.xcom_pull(task_ids='extract_content')[1] }}"],
+        op_args=["{{ task_instance.xcom_pull(task_ids='generate_pptx') }}",
+                 "{{ task_instance.xcom_pull(task_ids='extract_content')[1] }}"],
         provide_context=True
     )
 
@@ -138,7 +156,8 @@ with DAG(
     save_file_to_s3_step = PythonOperator(
         task_id='save_file_to_s3',
         python_callable=save_file_to_s3_task,
-        op_args=["{{ task_instance.xcom_pull(task_ids='add_transcript_to_pptx') }}", "{{ task_instance.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}", "{{ task_instance.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}"],
+        op_args=["{{ task_instance.xcom_pull(task_ids='add_transcript_to_pptx') }}", "{{ task_instance.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
+                 "{{ task_instance.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}"],
         provide_context=True
     )
 
@@ -147,11 +166,19 @@ with DAG(
     update_slide_entry_step = PythonOperator(
         task_id='update_slide_entry',
         python_callable=update_slide_entry_task,
-        op_args=["{{ task_instance.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}", "{{ task_instance.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}", "{{ task_instance.xcom_pull(task_ids='save_file_to_s3') }}"],
+        op_args=["{{ task_instance.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
+                 "{{ task_instance.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}", "{{ task_instance.xcom_pull(task_ids='save_file_to_s3') }}"],
+        provide_context=True
+    )
+
+    delete_entry_from_mongodb_step = PythonOperator(
+        task_id="delete_entry_from_mongodb",
+        python_callable=delete_entry_from_mongodb_task,
+        op_args=["{{ task_instance.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
+                 "{{ task_instance.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}"],
         provide_context=True
     )
 
     end = EmptyOperator(task_id="end")
 
-    start >> fetch_details_from_mongo_step >> get_resource_link_step >> extract_content_step >> generate_pptx_step >> add_transcript_to_pptx_step >> save_file_to_s3_step >> update_slide_entry_step >> end
-    
+    start >> fetch_details_from_mongo_step >> get_resource_link_step >> extract_content_step >> generate_pptx_step >> add_transcript_to_pptx_step >> save_file_to_s3_step >> update_slide_entry_step >> delete_entry_from_mongodb_step >> end
