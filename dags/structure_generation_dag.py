@@ -134,7 +134,7 @@ def delete_entry_from_mongodb_task(course_id, module_id, **kwargs):
 def add_notification_task(entry_id, course_id, module_id, **kwargs):
 
     course, module = _get_course_and_module(course_id, module_id)
-    message = f"Module {module["module_name"]} is ready for Structure Review."
+    message = f"Module {module['module_name']} is ready for Structure Review."
 
     mongodb_client = AtlasClient()
     users = course.get("users", [])

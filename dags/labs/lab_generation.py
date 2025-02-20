@@ -16,7 +16,7 @@ from airflow.providers.ssh.operators.ssh import SSHOperator
 from airflow.providers.ssh.hooks.ssh import SSHHook
 
 # Local Application Imports
-from dags.utils.prompt_handler import PromptHandler
+from utils.prompt_handler import PromptHandler
 from utils.mongodb_client import AtlasClient
 from labs.github_helpers import upload_file_to_github
 

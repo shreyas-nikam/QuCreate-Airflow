@@ -63,8 +63,7 @@ def fetch_artifacts(course_id, module_id):
                 "/")[3] + "/" + "/".join(resource['resource_link'].split("/")[4:])
             if resource['resource_type'] == "File":
                 logging.info(f"Downloading file: {resource_key}")
-                s3.download_file(resource_key, f"{
-                                 output_path}/{resource['resource_link'].split('/')[-1]}")
+                s3.download_file(resource_key, f"{output_path}/{resource['resource_link'].split('/')[-1]}")
 
             # TODO: Add support for other resource types like images, links and notes etc.
 
@@ -104,8 +103,7 @@ def upload_outline(course_id, module_id, outline):
         module["pre_processed_outline"] = []
         module["pre_processed_outline"].append(resource)
         module["status"] = "Outline Review"
-        course["modules"] = [m if m.get("module_id") != ObjectId(
-            module_id) else module for m in course["modules"]]
+        course["modules"] = [m if m.get("module_id") != ObjectId(module_id) else module for m in course["modules"]]
 
         mongodb_client.update("course_design", filter={"_id": ObjectId(
             course_id)}, update={"$set": {"modules": course["modules"]}})
@@ -116,8 +114,7 @@ def upload_outline(course_id, module_id, outline):
 
 
 async def process_outline(entry_id):
-    logging.info(f"Processing entry with ID: {
-                 entry_id} for outline generation.")
+    logging.info(f"Processing entry with ID: {entry_id} for outline generation.")
     mongodb_client = AtlasClient()
     entry = mongodb_client.find("in_outline_generation_queue", filter={
                                 "_id": ObjectId(entry_id)})

@@ -74,8 +74,7 @@ def create_audio_step(module_id, voice_name, transcript, **kwargs):
     print(type(transcript))
     transcript = ast.literal_eval(transcript)
     assert isinstance(transcript, list), "Transcript should be a list"
-    logging.info(f"Creating audio for module: {
-                 module_id}, voice: {voice_name}")
+    logging.info(f"Creating audio for module: {module_id}, voice: {voice_name}")
     _create_audio(module_id, transcript, voice_name)
 
 
@@ -120,8 +119,7 @@ def delete_entry_from_mongodb_step(entry_id, **kwargs):
 def add_notification_step(entry_id, course_id, module_id, **kwargs):
 
     course, module = _get_course_and_module(course_id, module_id)
-    message = f"Module {module["module_name"]
-                        } is ready for Deliverables Review."
+    message = f"Module {module['module_name']} is ready for Deliverables Review."
 
     mongodb_client = AtlasClient()
     users = course.get("users", [])

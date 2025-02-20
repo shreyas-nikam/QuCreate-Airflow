@@ -244,8 +244,7 @@ def _create_audio(module_id, transcript, voice_name):
     for index, speaker_notes in enumerate(transcript):
 
         # Get the audio
-        _get_audio(module_id, speaker_notes, f"audio_{
-                   index+1}.wav", voice_name)
+        _get_audio(module_id, speaker_notes, f"audio_{index+1}.wav", voice_name)
 
 
 def _stitch_videos(module_id, updation_map):
@@ -307,8 +306,7 @@ def _get_questions_helper(module_content, module_id, chunk_size=20000):
 
         _save_questions(questions, module_id)
     except Exception as e:
-        logging.error(f"Error in getting questions for module {
-                      module_id}: {e}")
+        logging.error(f"Error in getting questions for module {module_id}: {e}")
 
 
 def _add_silence_to_audio(module_id, audio_file_name):
@@ -421,8 +419,7 @@ async def _generate_chatbot(slide_content, destination, course_id, module_id):
     with open(f"{destination}/slide_content.txt", "w") as file:
         file.write(slide_content)
 
-    key = f"qu-course-design/{course_id}/{
-        module_id}/pre_processed_deliverables/retriever.txt"
+    key = f"qu-course-design/{course_id}/{module_id}/pre_processed_deliverables/retriever.txt"
     await s3_file_manager.upload_file(f"{destination}/slide_content.txt", key)
 
     chabot_link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+key
@@ -471,12 +468,10 @@ async def upload_files(course_id, video_path, assessment_path, chatbot_path, mod
         logging.info(f"Uploading video to s3 for module: {module_id}")
         s3_client = S3FileManager()
         course, module = _get_course_and_module(course_id, module_id)
-        key = f"qu-course-design/{course_id}/{
-            module_id}/pre_processed_deliverables/"
+        key = f"qu-course-design/{course_id}/{module_id}/pre_processed_deliverables/"
 
         video_id = upload_video_to_vimeo(video_path, module['module_name'])
-        video_link = f"""<div style="padding:56.25% 0 0 0;position:relative;"><iframe src="https://player.vimeo.com/video/{
-            video_id}?badge=0&amp;autopause=0&amp;player_id=0&amp;app_id=58479" frameborder="0" allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media" style="position:absolute;top:0;left:0;width:100%;height:100%;" title="Fundamental Principles of Value Creation"></iframe></div><script src="https://player.vimeo.com/api/player.js"></script>"""
+        video_link = f"""<div style="padding:56.25% 0 0 0;position:relative;"><iframe src="https://player.vimeo.com/video/{video_id}?badge=0&amp;autopause=0&amp;player_id=0&amp;app_id=58479" frameborder="0" allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media" style="position:absolute;top:0;left:0;width:100%;height:100%;" title="Fundamental Principles of Value Creation"></iframe></div><script src="https://player.vimeo.com/api/player.js"></script>"""
 
         if has_assessment:
             logging.info(f"Uploading assessment to s3 for module: {module_id}")
@@ -527,8 +522,7 @@ def update_module_with_deliverables(course_id, module_id, video_link, assessment
                 new_location_key = new_location.split(
                     "/")[3] + "/" + "/".join(new_location.split("/")[4:])
                 s3_client = S3FileManager()
-                logging.info(f"Copying file from {
-                             prev_location_key} to {new_location_key}")
+                logging.info(f"Copying file from {prev_location_key} to {new_location_key}")
                 s3_client.copy_file(prev_location_key, new_location_key)
                 new_location_link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+new_location_key
 

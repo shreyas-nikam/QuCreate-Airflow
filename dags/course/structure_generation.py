@@ -105,8 +105,7 @@ def _generate_pptx(markdown, module_id):
         output_ppt_path = Path(f"output/{module_id}/structure.pptx")
 
         # Generate the pptx file
-        os.system(f'python md2pptx/md2pptx.py "{str(output_ppt_path.absolute())}" < "{
-                  str(md_file_path.absolute())}"')
+        os.system(f'python md2pptx/md2pptx.py "{str(output_ppt_path.absolute())}" < "{str(md_file_path.absolute())}"')
 
         # check if file is created
         if not output_ppt_path.exists():

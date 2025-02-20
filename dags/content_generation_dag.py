@@ -63,8 +63,7 @@ def generate_module_information_step(module_id, slides, **kwargs):
 def write_content_to_file_step(module_id, slides, module_information, **kwargs):
     logging.info(f"Writing content to file for module: {module_id}")
     slide_output_path = f"output/{module_id}/slide_content/slide_content.json"
-    module_information_output_path = f"output/{
-        module_id}/module_information/module_information.md"
+    module_information_output_path = f"output/{module_id}/module_information/module_information.md"
     python_data = ast.literal_eval(slides)
     json_data = json.dumps(python_data, indent=4)
     Path(slide_output_path[:slide_output_path.rindex("/")]
@@ -82,10 +81,8 @@ def write_content_to_file_step(module_id, slides, module_information, **kwargs):
 def upload_content_to_s3_step(course_id, module_id, slide_output_path, module_information_output_path, **kwargs):
     logging.info(f"Uploading content to s3 for module: {module_id}")
     s3_file_manager = S3FileManager()
-    s3_slide_output_key = f"qu-course-design/{course_id}/{
-        module_id}/slide_content/slide_content.json"
-    s3_module_information_output_key = f"qu-course-design/{course_id}/{
-        module_id}/module_information/module_information.md"
+    s3_slide_output_key = f"qu-course-design/{course_id}/{module_id}/slide_content/slide_content.json"
+    s3_module_information_output_key = f"qu-course-design/{course_id}/{module_id}/module_information/module_information.md"
     asyncio.run(s3_file_manager.upload_file(
         slide_output_path, s3_slide_output_key))
     asyncio.run(s3_file_manager.upload_file(
@@ -145,7 +142,7 @@ def delete_entry_from_mongo_step(entry_id, **kwargs):
 def add_notification_step(entry_id, course_id, module_id, **kwargs):
 
     course, module = _get_course_and_module(course_id, module_id)
-    message = f"Module {module["module_name"]} is ready for Content Review."
+    message = f"Module {module['module_name']} is ready for Content Review."
 
     users = course.get("users", [])
     mongodb_client = AtlasClient()
