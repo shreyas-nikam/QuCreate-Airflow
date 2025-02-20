@@ -1,3 +1,4 @@
+import logging
 from airflow import DAG
 from airflow.operators.python import PythonOperator, BranchPythonOperator
 from airflow.utils.dates import days_ago
@@ -7,6 +8,7 @@ from utils.mongodb_client import AtlasClient
 from bson.objectid import ObjectId
 from airflow.utils.edgemodifier import Label
 from airflow.utils.trigger_rule import TriggerRule
+import datetime
 
 # Steps:
 # 1. Get the course ID to be published.
@@ -43,6 +45,69 @@ def delete_entry_task(entry_id, **kwargs):
     return True
 
 
+def add_notification_task(course_id, **kwargs):
+    """Add a notification for the user"""
+    
+    
+    mongodb_client = AtlasClient()
+    course = mongodb_client.find("courses", filter={"_id": ObjectId(course_id)})[0]
+    users = course.get("users", [])
+    message = f"The course {course['course_name']}."
+    for user in users:
+        notifications_object = {
+            "username": user["username"],
+            "creation_date": datetime.datetime.now(),
+            "type": "course_module",
+            "message": message,
+            "read": False,
+            "project_id": course_id
+        }
+        mongodb_client.insert("notifications", notifications_object)
+    return True
+
+
+def failure_callback(context):
+    """
+    Function to handle failures in the DAG.
+    1. Logs the error.
+    2. Updates MongoDB status to 'failed'.
+    3. Sends a failure notification.
+    4. Deletes the entry from MongoDB.
+    """
+    dag_run = context.get("dag_run")
+    entry_id = dag_run.conf.get("entry_id")
+
+    logging.error(f"DAG failed for entry ID: {entry_id}")
+
+    mongodb_client = AtlasClient()
+    entry = mongodb_client.find("in_publishing_queue", filter={"_id": ObjectId(entry_id)})
+
+    if entry:
+
+        course_id = entry[0].get("course_id")
+        course = mongodb_client.find("course_design", filter={"_id": ObjectId(course_id)})[0]
+
+
+        mongodb_client.update("course_design", filter={"_id": ObjectId(course_id)}, update={"$set": {"status": "Failed"}})
+        logging.info(f"Updated course {course_id} status to 'Failed' in MongoDB.")
+        # Send failure notification
+        message = f"Processing of the publishing for course {course['course_name']} failed. Please contact the administrator."
+        users = course.get("users", [])
+        for user in users:
+            notification = {
+                "username": user,
+                "creation_date": datetime.datetime.now(),
+                "type": "course",
+                "message": message,
+                "read": False,
+                "project_id": course_id
+            }
+            mongodb_client.insert("notifications", notification)
+
+        # Delete the entry from MongoDB
+        mongodb_client.delete("in_publishing_queue", filter={"_id": ObjectId(entry_id)})
+        logging.info(f"Deleted entry {entry_id} from MongoDB after failure.")
+
 # Default Arguments
 default_args = {
     "owner": "airflow",
@@ -51,6 +116,7 @@ default_args = {
     "email_on_failure": False,
     "email_on_retry": False,
     "retries": 1,
+    "on_failure_callback": failure_callback
 }
 
 # Define the DAG
@@ -115,12 +181,18 @@ with DAG(
         trigger_rule=TriggerRule.ONE_SUCCESS
     )
 
+    add_notification_step = PythonOperator(
+        task_id="add_notification",
+        python_callable=add_notification_task,
+        provide_context=True,
+        op_args=["{{ dag_run.conf.entry_id }}"],
+        trigger_rule=TriggerRule.ONE_SUCCESS
+    )
+
     end = EmptyOperator(task_id="end")
 
     start >> get_course_id_step >> branch
-    branch >> Label(
-        "Update Course") >> update_course_step
-    branch >> Label(
-        "Create Course") >> create_course_step
+    branch >> Label("Update Course") >> update_course_step
+    branch >> Label("Create Course") >> create_course_step
 
-    [update_course_step, create_course_step] >> delete_entry_step >> end
+    [update_course_step, create_course_step] >> delete_entry_step >> add_notification_step >> end
