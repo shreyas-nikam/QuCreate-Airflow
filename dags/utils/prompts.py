@@ -1,7 +1,7 @@
 
 prompts = {
-   
-"CONTENT_TO_QUESTIONS_PROMPT": """
+
+    "CONTENT_TO_QUESTIONS_PROMPT": """
 You are given the content for a module. You need to create {NUM_QUESTIONS} questions from the content.
 Each question object should have the following keys: "question", "options", "answer_option", and "explanation".
 All questions should have at least 4 options and the answer must be in one of the options.
@@ -66,7 +66,7 @@ Content: {CONTENT}
 """,
 
 
-"CONTENT_TO_SPEAKER_NOTES_PROMPT": """
+    "CONTENT_TO_SPEAKER_NOTES_PROMPT": """
 You are given the content for a slide in a module and the context of the content. You need to create speaker notes for the slide only based on the slide content.
 The speaker notes should be in a neutral tone with a continuous flow.  
 Do not expand acronyms in the speaker notes.
@@ -81,7 +81,7 @@ Context:
 {CONTEXT}
 """,
 
-"GET_MD_CONTENT_PROMPT":"""
+    "GET_MD_CONTENT_PROMPT": """
 You are given the content that is to be put on a slide. You need to summarize the content in a markdown format that can be used for a slide.
 You are catering to a professional audience. The content should be concise and to the point.
 Instructions:  
@@ -130,7 +130,7 @@ Content:
 {CONTENT}
 """,
 
-"CONTENT_TO_SUMMARY_PROMPT": """
+    "CONTENT_TO_SUMMARY_PROMPT": """
 You are given the content for a module. You need to write a summary of the content in 2 sentences and 3-5 short bullet points.
 The tone should be as if you are talking about what the course module will cover.
 The summary should be concise and cover the main points of the content.
@@ -140,7 +140,7 @@ Output format:
 "Summary of the content in 2 sentences and 3-5 bullet points."
 """,
 
-"COURSE_OUTLINE_TO_DF_PROMPT":"""
+    "COURSE_OUTLINE_TO_DF_PROMPT": """
 You are given a course outline. You need to return a list of dictionary objects where each dictionary object represents a module in the course outline, having module_name and slide_header.
 
 Instructions:
@@ -197,39 +197,31 @@ Output:
 
 """,
 
-"GET_RESEARCH_CONTENT_PROMPT":"""
+    "GET_RESEARCH_CONTENT_PROMPT": """
 I am working on the module {MODULE_NAME} and I need detailed research notes on the topic {TOPIC_NAME}. 
 Please provide an in-depth explanation that includes key concepts, theories, examples, links to images, links to diagrams, and any important studies or data related to the topic. 
 Organize the notes in a clear and structured way, with headings and subheadings if necessary. Make sure the notes are suitable for academic research, including any relevant citations or references to major works in this area.
 """,
 
-"GET_OUTLINE_PROMPT":"""
+    "GET_OUTLINE_PROMPT": """
 You are creating an outline for a presentation for a course. 
 For all the material that is uploaded, create an outline based on the user's instructions.
 The outline should be structured and organized in a logical flow.
-The outline can have interleaved text and images.
-The outline should have a header, bullet points, and image links in markdown format.
-Since you cannot directly produce an image, the image block takes in a file path - you should write in the file path of the image instead.
-How do you know which image to generate? Each context chunk will contain metadata including an image render of the source chunk, given as a file path. 
-Include ONLY the images from the chunks that have heavy visual elements (you can get a hint of this if the parsed text contains a lot of tables).
-You MUST include at least one image block in the output.
+The outline should have a header, bullet points in markdown format.
+Each Slide should cover the minimum content that can be covered in a slide. Do not have too much content on a single slide.
+The slides should have a continuous flow and should not be disjointed.
 
 Output format:
 ```markdown
-# Module 1: Introduction to AI in Finance
+# Slide 1:
+- Point 1
+- Point 2
+- Point 3
 
-- Topic 1: AI in Financial Report Writing
-- Topic 2: Natural Language Processing (NLP) in Finance
-- Topic 3: Generative AI for Marketing and Client Engagement
-
-![Image Description in detail for speaker notes](path/to/image.jpg)
-
-# Module 2: AI in Financial Risk Management
-
-- Topic 1: Predictive Analytics for Risk Assessment
-- Topic 2: AI in Fraud Detection and Prevention
-- Topic 3: Automated Compliance Monitoring
-- Topic 4: AI in Fraud Detection and Prevention
+# Slide 2:
+- Point 1
+- Point 2
+- Point 3
 
 ... and so on.
 ```
@@ -240,10 +232,11 @@ Instructions:
 
 """,
 
-"GET_SLIDE_PROMPT":
-"""
+    "GET_SLIDE_PROMPT":
+    """
 Based on the outline and the context provided, give me the contents for the a slide and the speaker notes for the corresponding slide.
 The slide should have slide header, slide content, and speaker notes.
+The slide should cover the minimum content that can be covered in a slide. Do not have too much content on a single slide.
 
 Slide Header Instructions:
 The headers should not be long and appropriate for the content on the slide.  
@@ -252,32 +245,31 @@ Slide Content Instructions:
 1. Summarize the content in 4-5 bullet points only.
 2. Give me the output in the given example Markdown format only.  
 3. Bullet points should compulsorily begin with a *.  
-4. Do not have any headers with less than 3 bullet points.
 
 
 Example output markdown format for slide content:  
 ```markdown
-
 * In a point, here's an [URL to example](https://www.example.com). This explains why this url is important.
 * One  
     * One A focuses on **this** point that speaks about the importance of this point that is highlighted in bold.
     * One B has this **important point** that is crucial for understanding the content. All the highlighted points should be in bold.
 * Two is the second point that is important for the content.
 * Three is the third point that is important for the content.
+```
 
 Speaker Notes Instructions:
-1. The speaker notes should be in a neutral tone with a continuous flow.  
-2. Do not expand acronyms in the speaker notes.
-3. Do not have any opening remarks like hello, welcome or ending remarks like thank you in the speaker notes.  
-4. Do not return anything other than the output string.  
-5. Speak in continuation as if you were continuing from the previous slide. Do not use comments like 'today, we will discuss', 'in this slide', 'this slide discusses', etc. in the speaker notes.  
-6. For formulae, do not use latex content, instead use words appropriate for the formulae so that they can be converted to audio. 
-
+You are given the content for a slide in a module and the context of the content. You need to create speaker notes for the slide only based on the slide content.
+The speaker notes should be in a neutral tone with a continuous flow.  
+Do not expand acronyms in the speaker notes.
+Do not have any opening remarks like hello, welcome or ending remarks like thank you in the speaker notes.  
+Do not return anything other than the output string.  
+Speak in continuation as if you were continuing from the previous slide. Do not use comments like 'welcome', 'today, we will discuss', 'in this slide', 'this slide discusses', etc. in the speaker notes.  
+For formulae, do not use latex content, instead use words appropriate for the formulae so that they can be converted to audio.
 
 Outline for the slide:
 
 """,
-"BREAK_OUTLINE_PROMPT":"""
+    "BREAK_OUTLINE_PROMPT": """
 You are given an outline for a presentation. You need to break down the outline into individual slides.
 Each slide should have a slide header and slide content.
 
@@ -290,14 +282,14 @@ Instructions:
 Example:
 Input:
 # Module 1: Introduction to AI in Finance
-## Topic 1: AI in Financial Report Writing
+## Slide 1: AI in Financial Report Writing
 - AI-powered tools for automatic generation of financial reports, quarterly earnings, and forecasts
 - AI in Financial Report Writing
 - How NLP models can automate content such as market commentary, regulatory documents, or credit analysis
 - Example: BloombergGPT for producing financial summaries and analyses
 
 
-## Topic 2: Natural Language Processing (NLP) in Finance
+## Slide 2: Natural Language Processing (NLP) in Finance
 - How NLP models can automate content such as market commentary, regulatory documents, or credit analysis
 - Example: JP Morgan's AI applications in creating research reports
 
@@ -323,10 +315,10 @@ Input:
 
 """,
 
-"GET_MODULE_INFORMATION_PROMPT":"""
+    "GET_MODULE_INFORMATION_PROMPT": """
 Given the outline of a slide deck, you need to write the module information for the course.
 It should cover what the module will cover.
-The output should be in two lines and 3-5 bullet points in markdonw format.
+The output should be in one paragraph and 3-5 or more bullet points.
 Do not return anything other than the output string.
 
 Example:
@@ -418,5 +410,6 @@ Given Streamlit application:
 
 }
 
+
 def get_prompts():
-	return prompts
+    return prompts

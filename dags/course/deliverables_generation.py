@@ -38,12 +38,14 @@ def _get_course_and_module(course_id, module_id):
         mongodb_client = AtlasClient()
 
         # Get the course_design object
-        course = mongodb_client.find("course_design", filter={"_id": ObjectId(course_id)})
+        course = mongodb_client.find("course_design", filter={
+                                     "_id": ObjectId(course_id)})
         if not course:
             return "Course not found", None
 
         course = course[0]
-        module = next((m for m in course.get("modules", []) if m.get("module_id") == ObjectId(module_id)), None)
+        module = next((m for m in course.get("modules", []) if m.get(
+            "module_id") == ObjectId(module_id)), None)
         if not module:
             return None, "Module not found"
 
@@ -62,19 +64,20 @@ def _get_resources_link(course_id, module_id):
         for obj in module["pre_processed_structure"]:
             if obj["resource_type"] == "Slide_Generated":
                 slide_link = obj["resource_link"]
-        
+
         for obj in module["pre_processed_content"]:
             if obj["resource_type"] == "Slide_Content":
                 content_link = obj["resource_link"]
 
         logging.info(f"Slide link: {slide_link}, Content link: {content_link}")
-        
+
         return slide_link, content_link
-    
+
     except Exception as e:
         logging.error(f"Error in getting slide content: {e}")
         return None
-    
+
+
 def _download_slide(slide_link, download_path):
     """
     Download the slide from the slide_link
@@ -83,7 +86,8 @@ def _download_slide(slide_link, download_path):
         logging.info(f"Downloading slide from: {slide_link}")
         s3_client = S3FileManager()
         logging.info(f"Downloading slide from: {slide_link}")
-        slide_key = slide_link.split("/")[3]  + "/" + "/".join(slide_link.split("/")[4:])
+        slide_key = slide_link.split(
+            "/")[3] + "/" + "/".join(slide_link.split("/")[4:])
         logging.info(f"Slide key: {slide_key}")
         slide_name = slide_key.split("/")[-1]
         logging.info(f"Slide name: {slide_name}")
@@ -94,7 +98,8 @@ def _download_slide(slide_link, download_path):
     except Exception as e:
         logging.error(f"Error in downloading slide: {e}")
         return None
-    
+
+
 def _get_slide_content(slide_link):
     """
     Get the slide content from the slide_content json file
@@ -102,7 +107,8 @@ def _get_slide_content(slide_link):
     try:
         logging.info(f"Getting slide content from: {slide_link}")
         s3_client = S3FileManager()
-        slide_key = slide_link.split("/")[3] + "/" + "/".join(slide_link.split("/")[4:])
+        slide_key = slide_link.split(
+            "/")[3] + "/" + "/".join(slide_link.split("/")[4:])
         logging.info(f"Slide key: {slide_key}")
         file = s3_client.get_object(slide_key)
         slide_content = file["Body"].read().decode("utf-8")
@@ -110,7 +116,8 @@ def _get_slide_content(slide_link):
     except Exception as e:
         logging.error(f"Error in getting slide content: {e}")
         return None
-    
+
+
 def _get_transcript_from_ppt(ppt):
     logging.info(f"Getting speaker notes from the ppt: {ppt}")
     prs = Presentation(ppt)
@@ -125,16 +132,16 @@ def _get_transcript_from_ppt(ppt):
 def _ppt_to_pdf(input_file, output_dir):
     """
     Convert a PowerPoint file to PDF using LibreOffice.
-    
+
     :param input_file: Path to the .pptx file
     :param output_dir: Directory where the PDF will be saved
     """
     if not os.path.exists(input_file):
         raise FileNotFoundError(f"File {input_file} does not exist")
-    
+
     if not os.path.isdir(output_dir):
         raise NotADirectoryError(f"{output_dir} is not a valid directory")
-    
+
     # LibreOffice command to convert to PDF
     command = [
         "libreoffice",
@@ -143,9 +150,10 @@ def _ppt_to_pdf(input_file, output_dir):
         "--outdir", output_dir,
         input_file
     ]
-    
+
     subprocess.run(command, check=True)
     print(f"Converted {input_file} to PDF and saved in {output_dir}")
+
 
 def _create_images(file_path, module_id):
     # Convert the ppt to pdf
@@ -153,12 +161,10 @@ def _create_images(file_path, module_id):
     target_folder = Path(f"{Path(OUTPUT_PATH)}/{module_id}")
     _ppt_to_pdf(file_path, target_folder)
 
-
     # Convert pdf to images
     source_file = Path(file_path.replace(".pptx", ".pdf"))
     target_folder = Path(f"{Path(OUTPUT_PATH)}/{module_id}/images")
     Path(target_folder).mkdir(parents=True, exist_ok=True)
-
 
     if os.path.exists(source_file):
         doc = fitz.open(source_file)
@@ -170,15 +176,14 @@ def _create_images(file_path, module_id):
         doc.close()
 
 
-
 def _get_audio(module_id, text, filename, voice_name):
     OUTPUT_PATH = "output"
 
     service_region = os.getenv("AZURE_TTS_SERVICE_REGION")
     speech_key = os.getenv("AZURE_TTS_SPEECH_KEY")
 
-
-    speech_config = speechsdk.SpeechConfig(subscription=speech_key, region=service_region)
+    speech_config = speechsdk.SpeechConfig(
+        subscription=speech_key, region=service_region)
     speech_config.speech_synthesis_language = "en-US"
 
     voice_name_map = {
@@ -189,13 +194,10 @@ def _get_audio(module_id, text, filename, voice_name):
     }
     speech_config.speech_synthesis_voice_name = voice_name_map[voice_name]
 
-
     filepath = Path(f"{OUTPUT_PATH}/{module_id}/audio")
-
 
     # Create the folder if it does not exist
     Path(filepath).mkdir(parents=True, exist_ok=True)
-
 
     # Create the audio synthesizer
     audio_config = speechsdk.audio.AudioOutputConfig(
@@ -203,30 +205,23 @@ def _get_audio(module_id, text, filename, voice_name):
     speech_synthesizer = speechsdk.SpeechSynthesizer(
         speech_config=speech_config, audio_config=audio_config)
 
-
     result = speech_synthesizer.speak_text_async(text).get()
-
 
     while not os.path.exists(Path(f'{filepath}/{filename}')):
         time.sleep(random.randint(5, 10))
 
-
     # Get the audio
     while result.reason != speechsdk.ResultReason.SynthesizingAudioCompleted:
-
 
         time.sleep(random.randint(15, 20))
         result = speech_synthesizer.speak_text_async(text).get()
 
-
         while not os.path.exists(Path(f'{filepath}/{filename}')):
             time.sleep(random.randint(5, 10))
-
 
         # Checks result.
         if result.reason == speechsdk.ResultReason.SynthesizingAudioCompleted:
             break
-
 
         elif result.reason == speechsdk.ResultReason.Canceled:
             cancellation_details = result.cancellation_details
@@ -245,12 +240,12 @@ def _create_audio(module_id, transcript, voice_name):
     audio_folder = Path(f"{Path(OUTPUT_PATH)}/{module_id}/audio")
     Path(audio_folder).mkdir(parents=True, exist_ok=True)
 
-
     # Iterate over the speaker notes for each .txt file
     for index, speaker_notes in enumerate(transcript):
 
         # Get the audio
-        _get_audio(module_id, speaker_notes, f"audio_{index+1}.wav", voice_name)
+        _get_audio(module_id, speaker_notes, f"audio_{
+                   index+1}.wav", voice_name)
 
 
 def _stitch_videos(module_id, updation_map):
@@ -259,7 +254,8 @@ def _stitch_videos(module_id, updation_map):
     clips = [VideoFileClip(video_file) for video_file in video_files]
     final_clip = concatenate_videoclips(clips, method="compose")
     Path(f"{OUTPUT_PATH}/{module_id}").mkdir(parents=True, exist_ok=True)
-    final_clip.write_videofile(str(Path(f"{OUTPUT_PATH}/{module_id}/video.mp4")), fps=10)
+    final_clip.write_videofile(
+        str(Path(f"{OUTPUT_PATH}/{module_id}/video.mp4")), fps=10)
 
 
 def _get_questions(module_content, num_questions=10):
@@ -269,7 +265,8 @@ def _get_questions(module_content, num_questions=10):
     while trials > 0:
         try:
             prompt = prompt_handler.get_prompt("CONTENT_TO_QUESTIONS_PROMPT")
-            response = llm.get_response(prompt, inputs={"CONTENT": module_content, "NUM_QUESTIONS": num_questions})
+            response = llm.get_response(
+                prompt, inputs={"CONTENT": module_content, "NUM_QUESTIONS": num_questions})
             try:
                 response = response[response.find("["):response.rfind("]") + 1]
                 return json.loads(response)
@@ -279,7 +276,6 @@ def _get_questions(module_content, num_questions=10):
             logging.error(f"Error in getting questions: {e}")
             trials -= 1
             continue
-
 
 
 def _save_questions(questions, module_id):
@@ -296,20 +292,24 @@ def _get_questions_helper(module_content, module_id, chunk_size=20000):
     module_content = ""
     for slide in module_content_json:
         module_content += slide["slide_content"] + "\n"
-    
+
     try:
         questions = []
         text = module_content
-        chunks = [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
+        chunks = [text[i:i+chunk_size]
+                  for i in range(0, len(text), chunk_size)]
         for chunk in chunks:
-            questions.extend(_get_questions(chunk, 10 if len(chunks)==1 else 5))
+            questions.extend(_get_questions(
+                chunk, 10 if len(chunks) == 1 else 5))
 
         for index, question in enumerate(questions):
             questions[index]["uuid"] = str(uuid.uuid4())
 
         _save_questions(questions, module_id)
     except Exception as e:
-        logging.error(f"Error in getting questions for module {module_id}: {e}")
+        logging.error(f"Error in getting questions for module {
+                      module_id}: {e}")
+
 
 def _add_silence_to_audio(module_id, audio_file_name):
     OUTPUT_PATH = f"output/{module_id}/audio"
@@ -322,6 +322,7 @@ def _add_silence_to_audio(module_id, audio_file_name):
     audio.export(new_audio_file_path, format="wav")
     return new_audio_filename
 
+
 def _create_video_parallel(module_id, slide_number, image):
     logging.info(f"Creating video for slide: {slide_number+1}")
     OUTPUT_PATH = "output"
@@ -329,63 +330,57 @@ def _create_video_parallel(module_id, slide_number, image):
     video_folder = Path(f"{OUTPUT_PATH}/{module_id}/video")
     img_clip = ImageClip(image)
 
-
     # Load audio file for the current slide
     logging.info(f"Adding silence to audio for slide: {slide_number+1}")
     _add_silence_to_audio(module_id, f"audio_{slide_number+1}.wav")
 
+    audio_file_path = Path(
+        f"{audio_folder}/audio_with_silence_{slide_number+1}.wav")
 
-    audio_file_path = Path(f"{audio_folder}/audio_with_silence_{slide_number+1}.wav")
-    
     audio_file = AudioFileClip(str(audio_file_path))
-
 
     # Set the duration of the text clip to match the audio duration
     img_clip = img_clip.set_duration(audio_file.duration)
 
-
     # Create a video for this current slide
     img_clip = img_clip.set_audio(audio_file)
 
-
     img_clip = img_clip.subclip(0, audio_file.duration)
-    img_clip.write_videofile(str(Path(f"{video_folder}/slide_{slide_number+1}.mp4")), 
-                             fps=10, 
-                             verbose=False, 
+    img_clip.write_videofile(str(Path(f"{video_folder}/slide_{slide_number+1}.mp4")),
+                             fps=10,
+                             verbose=False,
                              logger=None)
     return slide_number+1, str(Path(f"{video_folder}/slide_{slide_number+1}.mp4"))
 
 
 def _create_videos(module_id):
-    
+
     updation_map = {}
     OUTPUT_PATH = "output"
     image_folder = Path(f"{OUTPUT_PATH}/{module_id}/images")
     video_folder = Path(f"{OUTPUT_PATH}/{module_id}/video")
     Path(video_folder).mkdir(parents=True, exist_ok=True)
 
-
     # Get the sorted images
     search_dir = image_folder
     files = os.listdir(search_dir)
-    files = [os.path.join(search_dir, f) for f in files]  # add path to each file
+    files = [os.path.join(search_dir, f)
+             for f in files]  # add path to each file
     files.sort(key=lambda x: os.path.getmtime(x))
 
-
     parallel_videos = [(module_id, i, img) for i, img in enumerate(files)]
-
 
     with multiprocessing.Pool(processes=1) as pool:
         results = pool.starmap(_create_video_parallel, parallel_videos)
         for slide_number, video_path in results:
             updation_map[slide_number] = video_path
 
-
     with open(Path(f"{OUTPUT_PATH}/{module_id}/updation_map.json"), "w", encoding='utf-8') as file:
         file.write(json.dumps(updation_map))
 
     logging.info("Stitching videos")
     _stitch_videos(module_id, updation_map)
+
 
 def _generate_video(slide_path, module_id, voice_name):
     transcript = _get_transcript_from_ppt(slide_path)
@@ -404,34 +399,35 @@ def _generate_assessment(module_id, slide_content):
     except Exception as e:
         logging.error(f"Error in generating assessment: {e}")
         return None
-    
-    
+
+
 async def _generate_chatbot(slide_content, destination, course_id, module_id):
     """
     Creates a retriever object for the course
-    
+
     Args:
     file_name: Path to the folder containing the course content
     destination: Path to the folder where the retriever object will be saved
     """
 
     logging.info("Creating the retriever object")
-    
+
     slide_content_json = ast.literal_eval(slide_content)
     slide_content = ""
     for slide in slide_content_json:
         slide_content += slide["slide_content"] + "\n"
 
-    
     s3_file_manager = S3FileManager()
     with open(f"{destination}/slide_content.txt", "w") as file:
         file.write(slide_content)
-    
-    key = f"qu-course-design/{course_id}/{module_id}/pre_processed_deliverables/retriever.txt"
+
+    key = f"qu-course-design/{course_id}/{
+        module_id}/pre_processed_deliverables/retriever.txt"
     await s3_file_manager.upload_file(f"{destination}/slide_content.txt", key)
 
     chabot_link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+key
     return chabot_link
+
 
 def upload_video_to_vimeo(video_path, module_name):
     """
@@ -451,6 +447,15 @@ def upload_video_to_vimeo(video_path, module_name):
                 'view': 'anybody'
             }
         })
+
+        while True:
+            video = vimeo_client.get(uri+"?fields=transcode.status").json()
+            print(video['transcode']['status'])
+            if video["transcode"]["status"] == "complete":
+                logging.info("Video uploaded successfully")
+                break
+            time.sleep(30)
+
         video_id = uri.split("/")[-1]
         return video_id
     except Exception as e:
@@ -466,11 +471,13 @@ async def upload_files(course_id, video_path, assessment_path, chatbot_path, mod
         logging.info(f"Uploading video to s3 for module: {module_id}")
         s3_client = S3FileManager()
         course, module = _get_course_and_module(course_id, module_id)
-        key = f"qu-course-design/{course_id}/{module_id}/pre_processed_deliverables/"
+        key = f"qu-course-design/{course_id}/{
+            module_id}/pre_processed_deliverables/"
 
         video_id = upload_video_to_vimeo(video_path, module['module_name'])
-        video_link = f"""<div style="padding:56.25% 0 0 0;position:relative;"><iframe src="https://player.vimeo.com/video/{video_id}?badge=0&amp;autopause=0&amp;player_id=0&amp;app_id=58479" frameborder="0" allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media" style="position:absolute;top:0;left:0;width:100%;height:100%;" title="Fundamental Principles of Value Creation"></iframe></div><script src="https://player.vimeo.com/api/player.js"></script>"""
-        
+        video_link = f"""<div style="padding:56.25% 0 0 0;position:relative;"><iframe src="https://player.vimeo.com/video/{
+            video_id}?badge=0&amp;autopause=0&amp;player_id=0&amp;app_id=58479" frameborder="0" allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media" style="position:absolute;top:0;left:0;width:100%;height:100%;" title="Fundamental Principles of Value Creation"></iframe></div><script src="https://player.vimeo.com/api/player.js"></script>"""
+
         if has_assessment:
             logging.info(f"Uploading assessment to s3 for module: {module_id}")
             assessment_key = key + f"{module_id}_assessment.json"
@@ -487,11 +494,12 @@ async def upload_files(course_id, video_path, assessment_path, chatbot_path, mod
             chatbot_link = ""
 
         return video_link, assessment_link, chatbot_link
-    
+
     except Exception as e:
         logging.error(f"Error in uploading files: {e}")
         return None, None, None
-    
+
+
 def update_module_with_deliverables(course_id, module_id, video_link, assessment_link, chatbot_link, has_chatbot, has_assessment, slide_link):
     """
     Update the module with the video, assessment, chatbot links in pre_processed_deliverables
@@ -510,13 +518,17 @@ def update_module_with_deliverables(course_id, module_id, video_link, assessment
 
         for resource in module['pre_processed_structure']:
             if resource["resource_type"] == "Note":
-                
+
                 prev_location = resource["resource_link"]
-                prev_location_key = prev_location.split("/")[3] + "/" + "/".join(prev_location.split("/")[4:])
-                new_location = prev_location.replace("pre_processed_structure", "pre_processed_deliverables")
-                new_location_key = new_location.split("/")[3] + "/" + "/".join(new_location.split("/")[4:])
+                prev_location_key = prev_location.split(
+                    "/")[3] + "/" + "/".join(prev_location.split("/")[4:])
+                new_location = prev_location.replace(
+                    "pre_processed_structure", "pre_processed_deliverables")
+                new_location_key = new_location.split(
+                    "/")[3] + "/" + "/".join(new_location.split("/")[4:])
                 s3_client = S3FileManager()
-                logging.info(f"Copying file from {prev_location_key} to {new_location_key}")
+                logging.info(f"Copying file from {
+                             prev_location_key} to {new_location_key}")
                 s3_client.copy_file(prev_location_key, new_location_key)
                 new_location_link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+new_location_key
 
@@ -553,13 +565,13 @@ def update_module_with_deliverables(course_id, module_id, video_link, assessment
                 "resource_description": "Chatbot text for creating the retriever",
                 "resource_id": ObjectId()
             })
-        
 
         module["status"] = "Deliverables Review"
-        course['modules'] = [module if m["module_id"] == module["module_id"] else m for m in course['modules']]
+        course['modules'] = [module if m["module_id"] ==
+                             module["module_id"] else m for m in course['modules']]
         mongodb_client = AtlasClient()
-        mongodb_client.update("course_design", filter={"_id": ObjectId(course_id)}, update={"$set": course})
-        
+        mongodb_client.update("course_design", filter={
+                              "_id": ObjectId(course_id)}, update={"$set": course})
+
     except Exception as e:
         logging.error(f"Error in updating module with deliverables: {e}")
-

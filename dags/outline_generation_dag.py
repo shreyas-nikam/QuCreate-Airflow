@@ -9,21 +9,26 @@ from bson.objectid import ObjectId
 import logging
 from airflow.operators.empty import EmptyOperator
 from pathlib import Path
+import datetime
+from course.structure_generation import _get_course_and_module
+
 
 def fetch_details_from_mongo(entry_id, **kwargs):
     logging.info(f"Fetching details for entry with ID: {entry_id}")
     entry_id = kwargs["dag_run"].conf.get("entry_id")
     mongodb_client = AtlasClient()
-    entry = mongodb_client.find("in_outline_generation_queue", filter={"_id": ObjectId(entry_id)})
+    entry = mongodb_client.find("in_outline_generation_queue", filter={
+                                "_id": ObjectId(entry_id)})
     if not entry:
         return "Entry not found"
-    
+
     entry = entry[0]
     course_id = entry.get("course_id")
     module_id = entry.get("module_id")
     instructions = entry.get("instructions")
-    
+
     return course_id, module_id, instructions
+
 
 def fetch_artifacts_task(course_id, module_id, **kwargs):
     logging.info("Fetching artifacts")
@@ -34,13 +39,14 @@ def fetch_artifacts_task(course_id, module_id, **kwargs):
         raise Exception("Error in fetching artifacts")
     return artifacts_path
 
+
 def parse_files_and_create_index_task(module_id, file_path, **kwargs):
     logging.info("Parsing files")
     download_path = f"output/{module_id}/files"
     vector_index = parse_files(module_id, file_path, download_path)
     logging.info("Files parsed")
     save_index(vector_index, Path("output") / module_id / "vector_index")
-    
+
 
 def generate_outline_task(module_id, instructions, **kwargs):
     logging.info("Generating outline")
@@ -48,18 +54,42 @@ def generate_outline_task(module_id, instructions, **kwargs):
     logging.info("Outline generated")
     return outline
 
+
 def upload_outline_task(course_id, module_id, outline, **kwargs):
     logging.info("Uploading outline")
     upload_outline(course_id, module_id, outline)
     logging.info("Outline uploaded")
     return True
 
+
 def delete_entry_from_mongodb_task(course_id, module_id, **kwargs):
     logging.info("Deleting entry from MongoDB")
     mongodb_client = AtlasClient()
-    mongodb_client.delete("in_outline_generation_queue", filter={"course_id": course_id, "module_id": module_id})
+    mongodb_client.delete("in_outline_generation_queue", filter={
+                          "course_id": course_id, "module_id": module_id})
     logging.info("Entry deleted")
     return True
+
+
+def add_notification_task(entry_id, course_id, module_id, **kwargs):
+
+    _, module = _get_course_and_module(course_id, module_id)
+    message = f"Module {module["module_name"]} is ready for Outline Review."
+
+    mongodb_client = AtlasClient()
+    notifications_object = {
+        "username": "eca33ce0-62e5-41f8-88b0-1cf558fa7c81",
+        "creation_date": datetime.datetime.now(),
+        "type": "course_module",
+        "message": message,
+        "read": False,
+        "module_id": module_id,
+        "project_id": course_id
+    }
+    mongodb_client.insert("notifications", notifications_object)
+
+    return True
+
 
 default_args = {
     'owner': 'airflow',
@@ -77,14 +107,15 @@ with DAG(
     schedule_interval=None,  # Triggered externally
     catchup=False,
 ) as dag:
-    
+
     start = EmptyOperator(task_id='start')
 
     # Fetch the entry from MongoDB
     fetch_entry = PythonOperator(
         task_id='fetch_entry_from_mongo',
         python_callable=fetch_details_from_mongo,
-        op_args=["{{ dag_run.conf['entry_id'] }}"],  # Pass entry_id from the dag run
+        # Pass entry_id from the dag run
+        op_args=["{{ dag_run.conf['entry_id'] }}"],
         provide_context=True
     )
 
@@ -92,7 +123,8 @@ with DAG(
     fetch_artifacts_step = PythonOperator(
         task_id='fetch_artifacts',
         python_callable=fetch_artifacts_task,
-        op_args=["{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[0] }}", "{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[1] }}"],
+        op_args=["{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[0] }}",
+                 "{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[1] }}"],
         provide_context=True
     )
 
@@ -100,7 +132,8 @@ with DAG(
     parse_files_and_create_index_step = PythonOperator(
         task_id='parse_files_and_create_index',
         python_callable=parse_files_and_create_index_task,
-        op_args=["{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[1] }}", "{{ task_instance.xcom_pull(task_ids='fetch_artifacts') }}"],
+        op_args=["{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[1] }}",
+                 "{{ task_instance.xcom_pull(task_ids='fetch_artifacts') }}"],
         provide_context=True
     )
 
@@ -108,7 +141,8 @@ with DAG(
     generate_outline_step = PythonOperator(
         task_id='generate_outline',
         python_callable=generate_outline_task,
-        op_args=["{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[1] }}", "{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[2] }}"],
+        op_args=["{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[1] }}",
+                 "{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[2] }}"],
         provide_context=True
     )
 
@@ -116,7 +150,8 @@ with DAG(
     upload_outline_step = PythonOperator(
         task_id='upload_outline',
         python_callable=upload_outline_task,
-        op_args=["{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[0] }}", "{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[1] }}", "{{ task_instance.xcom_pull(task_ids='generate_outline') }}"],
+        op_args=["{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[0] }}",
+                 "{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[1] }}", "{{ task_instance.xcom_pull(task_ids='generate_outline') }}"],
         provide_context=True
     )
 
@@ -124,10 +159,20 @@ with DAG(
     delete_entry_from_mongodb_step = PythonOperator(
         task_id='delete_entry_from_mongodb',
         python_callable=delete_entry_from_mongodb_task,
-        op_args=["{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[0] }}", "{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[1] }}"],
+        op_args=["{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[0] }}",
+                 "{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[1] }}"],
+        provide_context=True
+    )
+
+    add_notification_step = PythonOperator(
+        task_id='add_notification',
+        python_callable=add_notification_task,
+        op_args=["{{ dag_run.conf['entry_id'] }}",
+                 "{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[0] }}",
+                 "{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[1] }}"],
         provide_context=True
     )
 
     end = EmptyOperator(task_id='end')
 
-    start >> fetch_entry >> fetch_artifacts_step >> parse_files_and_create_index_step >> generate_outline_step >> upload_outline_step >> delete_entry_from_mongodb_step >> end
+    start >> fetch_entry >> fetch_artifacts_step >> parse_files_and_create_index_step >> generate_outline_step >> upload_outline_step >> delete_entry_from_mongodb_step >> add_notification_step >> end

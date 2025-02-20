@@ -23,12 +23,14 @@ def _get_course_and_module(course_id, module_id):
         mongodb_client = AtlasClient()
 
         # Get the course_design object
-        course = mongodb_client.find("course_design", filter={"_id": ObjectId(course_id)})
+        course = mongodb_client.find("course_design", filter={
+                                     "_id": ObjectId(course_id)})
         if not course:
             return "Course not found", None
 
         course = course[0]
-        module = next((m for m in course.get("modules", []) if m.get("module_id") == ObjectId(module_id)), None)
+        module = next((m for m in course.get("modules", []) if m.get(
+            "module_id") == ObjectId(module_id)), None)
         if not module:
             return None, "Module not found"
 
@@ -45,9 +47,9 @@ def _get_resource_link(module):
         for obj in module["pre_processed_content"]:
             if obj["resource_type"] == "Slide_Content":
                 return obj["resource_link"]
-        
+
         return None
-    
+
     except Exception as e:
         logging.error(f"Error in getting slide content: {e}")
         return None
@@ -61,7 +63,6 @@ def _extract_content(module_name, slide_content_key):
         s3_client = S3FileManager()
         response = s3_client.get_object(slide_content_key)
         slide_content = json.loads(response["Body"].read())
-        
 
         markdown = f"""template: Martin Template.pptx
 pageTitleSize: 30
@@ -72,9 +73,9 @@ style.fgcolor.red: FF0000
 style.fgcolor.green: 00FF00
 
 # {module_name}
- 
+
 """
-        transcript = ["Hello welcome to the module"]
+        transcript = ["Hello welcome to the module on " + module_name]
 
         for slide in slide_content:
             # replace the starting hyphen at the start of each line only with a  * for each line
@@ -85,7 +86,7 @@ style.fgcolor.green: 00FF00
             transcript.append(slide["speaker_notes"])
 
         return markdown, transcript
-    
+
     except Exception as e:
         logging.error(f"Error in extracting content: {e}")
         return None, None
@@ -99,21 +100,25 @@ def _generate_pptx(markdown, module_id):
         # write the file in a temp location
         with open(f"output/{module_id}/content.md", "w") as f:
             f.write(markdown)
-        
+
         md_file_path = Path(f"output/{module_id}/content.md")
         output_ppt_path = Path(f"output/{module_id}/structure.pptx")
 
         # Generate the pptx file
-        os.system(f'python md2pptx/md2pptx.py "{str(output_ppt_path.absolute())}" < "{str(md_file_path.absolute())}"')
+        os.system(f'python md2pptx/md2pptx.py "{str(output_ppt_path.absolute())}" < "{
+                  str(md_file_path.absolute())}"')
 
+        # check if file is created
+        if not output_ppt_path.exists():
+            raise Exception("Error in generating pptx")
         return f"output/{module_id}/structure.pptx"
-    
+
     except Exception as e:
         logging.error(f"Error in generating pptx: {e}")
         return None
-    
 
-def _format_ppt(output_ppt_path, 
+
+def _format_ppt(output_ppt_path,
                 speaker_notes,
                 logo_path="dags/course/assets/logo.jpg",
                 header='dags/course/assets/top.png'):
@@ -122,21 +127,16 @@ def _format_ppt(output_ppt_path,
 
     prs = Presentation(output_ppt_path)
 
-
     # remove first slide from ppt
     del prs.slides._sldIdLst[0]
 
-
     prs.save(output_ppt_path)
-
 
     # Reopen the presentation to save the changes
     prs = Presentation(output_ppt_path)
 
-
     slide_number = 0
     for slide in prs.slides:
-
 
         if slide_number > 0:
             # move the title and content down by one inch
@@ -146,7 +146,6 @@ def _format_ppt(output_ppt_path,
                     shape.top = Inches(top_margin)
                     top_margin = 1.5
 
-
         # add speaker notes to all slides
         try:
             notes_slide = slide.notes_slide
@@ -155,20 +154,17 @@ def _format_ppt(output_ppt_path,
         except Exception as e:
             pass
 
-
         # Add logo to the bottom right corner of each slide
         left = prs.slide_width - Inches(1)
         top = prs.slide_height - Inches(0.65)
         width = Inches(1)
         slide.shapes.add_picture(logo_path, left, top, width=width)
 
-
         # Add header to the top of each slide
         left = 0
         top = 0
         width = prs.slide_width
         slide.shapes.add_picture(header, left, top, width=width)
-
 
         # Add page number to the top right corner of each slide
         left = prs.slide_width - Inches(0.5)
@@ -181,7 +177,6 @@ def _format_ppt(output_ppt_path,
         p.text = f"{slide_number+1}"
         p.margin_top = 0
         p.font.bold = True
-
 
         slide_number += 1
 
@@ -225,21 +220,23 @@ def _update_slide_entry(course_id, module_id, resource_link):
             "resource_id": ObjectId()
         }
 
-        
         module["pre_processed_structure"] = []
 
         module["pre_processed_structure"].append(resource)
 
         # add the other resources to the module except for the Slide_Content
         for obj in module["pre_processed_content"]:
-            if obj["resource_type"] != "Slide_Content" or obj['resource_type']!="Link":
+            if obj["resource_type"] != "Slide_Content" or obj['resource_type'] != "Link":
                 # copy the object to the new s3 location
                 prev_location = obj["resource_link"]
-                new_location = prev_location.replace("pre_processed_content", "pre_processed_structure")
+                new_location = prev_location.replace(
+                    "pre_processed_content", "pre_processed_structure")
 
-                prev_location_key = prev_location.split("/")[3] + "/" + "/".join(prev_location.split("/")[4:])
-                new_location_key = new_location.split("/")[3] + "/" + "/".join(new_location.split("/")[4:])
-            
+                prev_location_key = prev_location.split(
+                    "/")[3] + "/" + "/".join(prev_location.split("/")[4:])
+                new_location_key = new_location.split(
+                    "/")[3] + "/" + "/".join(new_location.split("/")[4:])
+
                 s3_client.copy_file(prev_location_key, new_location_key)
 
                 resource = {
@@ -253,17 +250,17 @@ def _update_slide_entry(course_id, module_id, resource_link):
 
         # Check: might break
         module["status"] = "Structure Review"
-        course["modules"] = [module if m["module_id"] == module["module_id"] else m for m in course["modules"]]
+        course["modules"] = [module if m["module_id"] ==
+                             module["module_id"] else m for m in course["modules"]]
         logging.info("Updated the course object with the new slide content")
         logging.info(f"Updated course: {course}")
-        
-        
+
         mongodb_client.update("course_design", filter={"_id": ObjectId(course_id)}, update={
             "$set": course
         })
 
         return True
-    
+
     except Exception as e:
         logging.error(f"Error in updating entry: {e}")
 
@@ -278,7 +275,8 @@ async def process_structure_request(entry_id):
     5. Extract the transcript from the jso
     """
     mongodb_client = AtlasClient()
-    entry = mongodb_client.find("in_structure_generation_queue", filter={"_id": ObjectId(entry_id)})
+    entry = mongodb_client.find("in_structure_generation_queue", filter={
+                                "_id": ObjectId(entry_id)})
     if not entry:
         return "Entry not found"
     entry = entry[0]
@@ -289,13 +287,15 @@ async def process_structure_request(entry_id):
     slide_content_link = _get_resource_link(module)
     if slide_content_link is None:
         return "Slide Content is not Generated. Please generate the slide content first."
-    
-    slide_content_key = slide_content_link.split("/")[3] + "/" + "/".join(slide_content_link.split("/")[4:])
+
+    slide_content_key = slide_content_link.split(
+        "/")[3] + "/" + "/".join(slide_content_link.split("/")[4:])
     markdown, transcript = _extract_content(slide_content_key)
 
     pptx_file_path = _generate_pptx(markdown, module_id)
 
-    pptx_file_path_with_transcript = _add_transcript_to_pptx(pptx_file_path, transcript)
+    pptx_file_path_with_transcript = _add_transcript_to_pptx(
+        pptx_file_path, transcript)
     resource_link = await _save_file_to_s3(pptx_file_path_with_transcript, resource_link)
     updated_slide = _update_slide_entry(course_id, module_id, resource_link)
     return updated_slide
