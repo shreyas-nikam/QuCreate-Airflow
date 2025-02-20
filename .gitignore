@@ -33,3 +33,5 @@ example_dags/
 venv/
 
 output/
+QuSkillBridge.pem
+standalone_admin_password.txt
