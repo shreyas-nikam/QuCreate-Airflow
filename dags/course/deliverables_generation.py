@@ -189,7 +189,7 @@ def _get_audio(module_id, text, filename, voice_name):
     voice_name_map = {
         "Female US": "en-US-AvaNeural",
         "Male US": "en-US-AndrewNeural",
-        "Make UK": "en-GB-RyanNeural",
+        "Male UK": "en-GB-RyanNeural",
         "Female UK": "en-GB-AdaMultilingualNeural"
     }
     speech_config.speech_synthesis_voice_name = voice_name_map[voice_name]

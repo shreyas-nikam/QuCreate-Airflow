@@ -7,6 +7,8 @@ from utils.mongodb_client import AtlasClient
 from bson.objectid import ObjectId
 from airflow.utils.edgemodifier import Label
 from airflow.utils.trigger_rule import TriggerRule
+import datetime
+from course.structure_generation import _get_course_and_module
 
 # Steps:
 # 1. Get the course ID to be published.
@@ -42,6 +44,25 @@ def delete_entry_task(entry_id, **kwargs):
                         "_id": ObjectId(entry_id)})
     return True
 
+
+def add_notification_task(entry_id, course_id, **kwargs):
+
+    mongodb_client = AtlasClient()
+    course = mongodb_client.find("course_design", filter={"_id": ObjectId(course_id)})[0]
+    message = f"Course {course["course_name"]} is Published."
+
+    mongodb_client = AtlasClient()
+    notifications_object = {
+        "username": "eca33ce0-62e5-41f8-88b0-1cf558fa7c81",
+        "creation_date": datetime.datetime.now(),
+        "type": "course",
+        "message": message,
+        "read": False,
+        "project_id": course_id
+    }
+    mongodb_client.insert("notifications", notifications_object)
+
+    return True
 
 # Default Arguments
 default_args = {
@@ -114,6 +135,13 @@ with DAG(
         op_args=["{{ dag_run.conf.entry_id }}"],
         trigger_rule=TriggerRule.ONE_SUCCESS
     )
+    
+    add_notification_task = PythonOperator(
+        task_id="add_notification",
+        python_callable=add_notification_task,
+        provide_context=True,
+        op_args=["{{ dag_run.conf.entry_id }}", "{{ ti.xcom_pull(task_ids='get_course_id') }}"]
+    )    
 
     end = EmptyOperator(task_id="end")
 
@@ -123,4 +151,4 @@ with DAG(
     branch >> Label(
         "Create Course") >> create_course_step
 
-    [update_course_step, create_course_step] >> delete_entry_step >> end
+    [update_course_step, create_course_step] >> delete_entry_step >> add_notification_task >> end

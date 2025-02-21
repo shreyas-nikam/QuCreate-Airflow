@@ -61,6 +61,8 @@ course_object = {
     "disclaimer": "\nThis course contains content that has been partially or fully generated using artificial intelligence (AI) technology. While every effort has been made to ensure the accuracy and quality of the materials, please note that AI-generated content may not always reflect the latest developments, best practices, or personalized nuances within the field. We encourage you to critically evaluate the information presented and consult additional resources where necessary.\n"
 }
 
+mongo_client_test = AtlasClient(dbname="test")
+mongo_client_env = AtlasClient()
 
 async def _convert_to_pdf(course_id, module_id, slide_link):
     # Steps:
@@ -74,8 +76,7 @@ async def _convert_to_pdf(course_id, module_id, slide_link):
         slide = s3_file_manager.get_object(slide_key)
         file.write(slide["Body"].read())
     Path(f"output/{module_id}").mkdir(parents=True, exist_ok=True)
-    os.system(f"libreoffice --headless --convert-to pdf --outdir output/{
-              module_id}/ output/{module_id}/slide.pptx")
+    os.system(f"libreoffice --headless --convert-to pdf --outdir output/{module_id}/ output/{module_id}/slide.pptx")
 
     pdf_key = f"qu-course-design/{course_id}/{
         module_id}/post_processed_deliverables/slides.pdf"
@@ -86,11 +87,9 @@ async def _convert_to_pdf(course_id, module_id, slide_link):
 
 async def _update_modules(course_id, course):
     logging.info(f"Updating modules for course: {course_id}")
-    mongo_client = AtlasClient()
-    course_design = mongo_client.find(
-        "course_design", filter={"_id": ObjectId(course_id)})[0]
-    module_objs = mongo_client.find(
-        "post_processed_deliverables", filter={"course_id": course_id})
+    
+    course_design = mongo_client_env.find("course_design", filter={"_id": ObjectId(course_id)})[0]
+    module_objs = mongo_client_env.find("post_processed_deliverables", filter={"course_id": course_id})
     print(module_objs)
     if len(module_objs) == 0:
         raise Exception("No modules found for the course")
@@ -213,8 +212,7 @@ async def _update_modules(course_id, course):
 
     logging.info("Updating course design")
     course_design['status'] = "Published"
-    mongo_client.update("course_design", filter={"_id": ObjectId(
-        course_id)}, update={"$set": course_design})
+    mongo_client_env.update("course_design", filter={"_id": ObjectId(course_id)}, update={"$set": course_design})
 
     return course
 
@@ -299,16 +297,23 @@ def handle_update_course(course_id):
     6. Update the course design with the status for the published courses in the course_design collection.
     """
     try:
-        mongo_client = AtlasClient()
-        course = mongo_client.find(
-            "courses", filter={"course_id": ObjectId(course_id)})
+        course_design = mongo_client_env.find("course_design", filter={"_id": ObjectId(course_id)})[0]
+        
+        course = mongo_client_test.find("courses", filter={"course_id": ObjectId(course_id)})
 
         course = course[0]
+        certificate_path = _create_certificate(course_id, course_design["course_name"])
+
+        course["certificate_path"] = certificate_path
+        
+        course['app_name'] = course_design["course_name"]
+        course["app_image_location"] = course_design["course_image"]
+        course["short_description"] = course_design["course_description"]
+        course["home_page_introduction"] = course_design["course_outline"]
 
         course = asyncio.run(_update_modules(course_id, course))
 
-        mongo_client.update("courses", filter={
-                            "course_id": ObjectId(course_id)}, update={"$set": course})
+        mongo_client_test.update("courses", filter={"course_id": ObjectId(course_id)}, update={"$set": course})
 
         return True
 
@@ -328,20 +333,17 @@ def handle_create_course(course_id):
     """
     try:
         logging.info(f"Creating course: {course_id}")
-        mongo_client = AtlasClient()
 
         course = course_object
 
         print(course)
         course["course_id"] = ObjectId(course_id)
 
-        course_design = mongo_client.find(
-            "course_design", filter={"_id": ObjectId(course_id)})[0]
+        course_design = mongo_client_env.find("course_design", filter={"_id": ObjectId(course_id)})[0]
 
         logging.info("Creating certificate")
 
-        certificate_path = _create_certificate(
-            course_id, course_design["course_name"])
+        certificate_path = _create_certificate(course_id, course_design["course_name"])
 
         course["certificate_path"] = certificate_path
 
@@ -356,7 +358,7 @@ def handle_create_course(course_id):
         logging.info("Updating modules")
         course = asyncio.run(_update_modules(course_id, course))
 
-        mongo_client.insert("courses", course)
+        mongo_client_test.insert("courses", course)
 
         return True
 
