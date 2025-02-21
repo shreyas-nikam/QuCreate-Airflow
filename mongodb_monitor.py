@@ -18,6 +18,7 @@ COLLECTIONS_TO_DAGS = {
     "in_structure_generation_queue": "structure_generation_dag",
     "in_deliverables_generation_queue": "deliverables_generation_dag",
     "in_publishing_queue": "publishing_dag",
+    "in_lab_generation_queue": "lab_generation_dag",
 }
 
 # Airflow REST API Authentication
