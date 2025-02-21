@@ -74,8 +74,7 @@ def create_audio_step(module_id, voice_name, transcript, **kwargs):
     print(type(transcript))
     transcript = ast.literal_eval(transcript)
     assert isinstance(transcript, list), "Transcript should be a list"
-    logging.info(f"Creating audio for module: {
-                 module_id}, voice: {voice_name}")
+    logging.info(f"Creating audio for module: {module_id}, voice: {voice_name}")
     _create_audio(module_id, transcript, voice_name)
 
 
@@ -119,24 +118,74 @@ def delete_entry_from_mongodb_step(entry_id, **kwargs):
 
 def add_notification_step(entry_id, course_id, module_id, **kwargs):
 
-    _, module = _get_course_and_module(course_id, module_id)
-    message = f"Module {module["module_name"]
-                        } is ready for Deliverables Review."
+    course, module = _get_course_and_module(course_id, module_id)
+    message = f"Module {module['module_name']} is ready for Deliverables Review."
 
     mongodb_client = AtlasClient()
-    notifications_object = {
-        "username": "eca33ce0-62e5-41f8-88b0-1cf558fa7c81",
-        "creation_date": datetime.datetime.now(),
-        "type": "course_module",
-        "message": message,
-        "read": False,
-        "module_id": module_id,
-        "project_id": course_id
-    }
-    mongodb_client.insert("notifications", notifications_object)
+    users = course.get("users", [])
+    for user in users:
+        notifications_object = {
+            "username": user,
+            "creation_date": datetime.datetime.now(),
+            "type": "course_module",
+            "message": message,
+            "read": False,
+            "module_id": module_id,
+            "project_id": course_id
+        }
+        mongodb_client.insert("notifications", notifications_object)
+
 
     return True
 
+
+def failure_callback(context):
+    """
+    Function to handle failures in the DAG.
+    1. Logs the error.
+    2. Updates MongoDB status to 'failed'.
+    3. Sends a failure notification.
+    4. Deletes the entry from MongoDB.
+    """
+    dag_run = context.get("dag_run")
+    entry_id = dag_run.conf.get("entry_id")
+
+    logging.error(f"DAG failed for entry ID: {entry_id}")
+
+    mongodb_client = AtlasClient()
+    entry = mongodb_client.find("in_deliverables_generation_queue", filter={"_id": ObjectId(entry_id)})
+
+    if entry:
+
+        course_id = entry[0].get("course_id")
+        module_id = entry[0].get("module_id")
+        course, module = _get_course_and_module(course_id, module_id)
+
+        for index, module in enumerate(course['modules']):
+            if module['module_id'] == module_id:
+                course['modules'][index]['status'] = 'Failed'
+                break
+
+        mongodb_client.update("course_design", filter={"_id": ObjectId(course_id)}, update={"$set": {"modules": course["modules"]}})
+        logging.info(f"Updated course {course_id} with failed status for module {module_id}")
+        # Send failure notification
+        message = f"Processing of the deliverables for module {module['module_name']} failed. Please contact the administrator."
+        users = course.get("users", [])
+        for user in users:
+            notification = {
+                "username": user,
+                "creation_date": datetime.datetime.now(),
+                "type": "course_module",
+                "message": message,
+                "read": False,
+                "module_id": module_id,
+                "project_id": course_id
+            }
+            mongodb_client.insert("notifications", notification)
+
+        # Delete the entry from MongoDB
+        mongodb_client.delete("in_deliverables_generation_queue", filter={"_id": ObjectId(entry_id)})
+        logging.info(f"Deleted entry {entry_id} from MongoDB after failure.")
 
 default_args = {
     'owner': 'airflow',
@@ -145,6 +194,7 @@ default_args = {
     'email_on_failure': False,
     'email_on_retry': False,
     'retries': 1,
+    'on_failure_callback': failure_callback
 }
 
 with DAG(

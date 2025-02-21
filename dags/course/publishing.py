@@ -78,8 +78,7 @@ async def _convert_to_pdf(course_id, module_id, slide_link):
     Path(f"output/{module_id}").mkdir(parents=True, exist_ok=True)
     os.system(f"libreoffice --headless --convert-to pdf --outdir output/{module_id}/ output/{module_id}/slide.pptx")
 
-    pdf_key = f"qu-course-design/{course_id}/{
-        module_id}/post_processed_deliverables/slides.pdf"
+    pdf_key = f"qu-course-design/{course_id}/{module_id}/post_processed_deliverables/slides.pdf"
     await s3_file_manager.upload_file(f"output/{module_id}/slide.pdf", pdf_key, "application/pdf")
 
     return f"https://qucoursify.s3.us-east-1.amazonaws.com/{pdf_key}"
@@ -182,8 +181,7 @@ async def _update_modules(course_id, course):
                      "retriever/hybrid_db/index.pkl", "retriever/hybrid_db/index.faiss"]
         for file, key in zip(files, file_keys):
             await s3_file_manager.upload_file(file, f"qu-course-design/{course_id}/{key}")
-        chabot_link = f"https://qucoursify.s3.us-east-1.amazonaws.com/qu-course-design/{
-            course_id}/retriever"
+        chabot_link = f"https://qucoursify.s3.us-east-1.amazonaws.com/qu-course-design/{course_id}/retriever"
         course["chatbot_link"] = chabot_link
         course["has_chatbot"] = False
 
@@ -234,8 +232,7 @@ def _create_certificate(course_id, course_name):
 
     # Text to be added to the certificate
     title_text = course_name
-    message_text = f"is hereby recognized to have completed QuantUniversity's {
-        course_name} Course."
+    message_text = f"is hereby recognized to have completed QuantUniversity's {course_name} Course."
 
     # Wrapping helper function
     def draw_wrapped_text(draw, text, font, position, max_width, fill, align="left", line_spacing=10):

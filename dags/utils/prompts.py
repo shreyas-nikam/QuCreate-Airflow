@@ -295,8 +295,20 @@ Input:
 
 
 Output:
-["AI in Financial Report Writing\n\nAI-powered tools for automatic generation of financial reports, quarterly earnings, and forecasts\n\nAI in Financial Report Writing\n\nHow NLP models can automate content such as market commentary, regulatory documents, or credit analysis\n\nExample: BloombergGPT for producing financial summaries and analyses",
-"Natural Language Processing (NLP) in Finance\n\nHow NLP models can automate content such as market commentary, regulatory documents, or credit analysis\n\nExample: JP Morgan's AI applications in creating research reports"]
+["AI in Financial Report Writing
+
+AI-powered tools for automatic generation of financial reports, quarterly earnings, and forecasts
+
+AI in Financial Report Writing
+
+How NLP models can automate content such as market commentary, regulatory documents, or credit analysis
+
+Example: BloombergGPT for producing financial summaries and analyses",
+"Natural Language Processing (NLP) in Finance
+
+How NLP models can automate content such as market commentary, regulatory documents, or credit analysis
+
+Example: JP Morgan's AI applications in creating research reports"]
 
 Input:
 
@@ -323,7 +335,79 @@ The module will cover AI in Financial Report Writing, Natural Language Processin
 
 Input:
 
-"""
+""",
+
+
+"STREAMLIT_APP_PROMPT": """Given a technical specification document for a Streamlit application, generate the Streamlit code for the application.
+The lab should be self suffiecient and should not depend on any outside environment variables, datasets, apis which require environment files or other parameters that are not provided on the current page. If you require these, initialize them in the application itself, otherwise the application will break.
+Do not generate incomplete code, or empty blocks of code to be filled by the user. Generate complete code.
+Incorporate explanations for code functionalities within the application interface. 
+Provide comprehensive explanations to users about visualizations, data, crucial steps, and formulas. 
+Ensure the application is interactive, allowing users to visualize real-time changes in input. 
+Include an array of graphs, images, charts, and other visualizations to enhance interactivity.
+
+
+# Output Format
+
+Enclose the generated Streamlit code within Python code blocks.
+
+```python
+# Streamlit application code
+# [Your code here]
+```
+
+# Notes
+
+- Ensure the generated code is directly executable within a Streamlit environment.
+- Balance the complexity of the visualizations with performance to avoid lag.
+- Use clear and descriptive comments in the code to maintain clarity, even though the explanation is provided within the app.
+- Consider edge cases and inputs that may cause unexpected behavior during real-time updates.
+
+Technical Specification Document:
+{TECH_SPEC}
+""",
+
+"REQUIREMENTS_FILE_PROMPT": """
+Extract the required packages from the given Streamlit application and generate a requirements file.
+
+Return only the requirements file. This response will be used directly to generate and execute the requirements file, so include no other comments or information.
+
+# Notes
+
+- If versions are not specified in the Streamlit application, you may leave them out or assume the latest stable versions. Check for any in-code comments or documentation that might specify particular versions.
+
+# Output Format
+
+Output must be enclosed within three backticks to ensure proper formatting as a text file:
+```
+```
+
+# Examples
+
+**Given Streamlit application:**
+
+```python
+import streamlit as st
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Some functionalities
+```
+
+**Output:**
+
+```
+streamlit
+pandas
+numpy
+matplotlib
+```
+
+Given Streamlit application:
+{STREAMLIT_APP}""",
+
+
 }
 
 
