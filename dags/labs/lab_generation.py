@@ -18,48 +18,52 @@ from airflow.providers.ssh.hooks.ssh import SSHHook
 # Local Application Imports
 from utils.prompt_handler import PromptHandler
 from utils.mongodb_client import AtlasClient
-from labs.github_helpers import upload_file_to_github
+from labs.github_helpers import upload_file_to_github, update_file_in_github
 
 load_dotenv()
 GITHUB_USERNAME = os.getenv("GITHUB_USERNAME")
 
 
 docker_compose_file="""version: "3.8"
+
 services:
-  {LAB_ID}:
+  {LAB_ID}_service:
     build: .
     container_name: {LAB_ID}_container
+    # Adjust your desired external port mapping here. For example:
+    # "8502:8501" means the app is internally on 8501, but externally accessible on 8502.
     ports:
       - "{PORT}:8501"
+    environment:
+      - PORT=8501  # This must match the internal port used by Streamlit
     restart: always
-    volumes:
-      - .:/app
-    command: >
-bash -c "source venv/bin/activate && streamlit run app.py --server.port=8501 --server.headless=true"
 """
 
-docker_file="""# Use an official Python image
+docker_file="""# Use Python base image
 FROM python:3.8-slim
 
-# Set the working directory inside the container
+# Set working directory in the container
 WORKDIR /app
 
-# Copy the requirements file
-COPY requirements.txt .
+# Copy requirements (adjust file name if needed)
+COPY requirements.txt /app/
 
-# Install virtualenv & create a virtual environment inside the container
-RUN python -m venv venv && \
-    ./venv/bin/pip install --no-cache-dir --upgrade pip && \
-    ./venv/bin/pip install --no-cache-dir -r requirements.txt
+# Install dependencies
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
 
 # Copy the rest of the application code
-COPY . .
+COPY . /app
 
-# Expose Streamlit's default port (can be overridden in Docker Compose)
-EXPOSE 8501
+# Set the port number via build-time or run-time environment
+# We'll default it to 8501, but you can override later.
+ENV PORT=8501
 
-# Run the application inside the virtual environment
-CMD ["bash", "-c", "source venv/bin/activate && streamlit run app.py --server.port=8501 --server.headless=true"]
+# Expose the port so Docker maps it
+EXPOSE $PORT
+
+# Run Streamlit
+CMD ["bash", "-c", "streamlit run app.py --server.port=$PORT --server.headless=true"]
 """
 
 streamlit_conf_file="""[server]
@@ -69,16 +73,16 @@ enableCORS = false
 enableXsrfProtection = false
 """
 
-
-
 def fetch_details_from_mongo_task(**kwargs):
     entry_id = kwargs["dag_run"].conf.get("entry_id")
+    print(entry_id)
+    
     logging.info(f"Fetching details for entry with ID: {entry_id}")
     with open("ports.txt", "r") as f:
-        port = f.readline().strip()
+        port = int(f.readline().strip())
     port+=1
     mongodb_client = AtlasClient()  # Your own MongoDB client
-    entry = mongodb_client.find("in_content_generation_queue", filter={"_id": ObjectId(entry_id)})
+    entry = mongodb_client.find("in_lab_generation_queue", filter={"_id": ObjectId(entry_id)})
     if not entry:
         raise ValueError("Entry not found in MongoDB")
 
@@ -95,16 +99,22 @@ def get_streamlit_code(lab_id, **kwargs):
     prompt = PromptHandler().get_prompt("STREAMLIT_APP_PROMPT")
     atlas_client = AtlasClient()
     lab = atlas_client.find("lab_design", filter={"_id": ObjectId(lab_id)})
+    if not lab:
+        raise ValueError("Lab not found in MongoDB")
+    lab = lab[0]
     technical_specifications = lab.get("technical_specifications")
 
     streamlit_code_prompt = prompt.format(TECH_SPEC=technical_specifications)
-    print(streamlit_code_prompt)
+    logging.info("Updated prompt for generating streamlit code:", streamlit_code_prompt)
+    logging.info("================================================================")
 
     client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
     response = client.models.generate_content(
         model="gemini-2.0-flash-thinking-exp",
         contents=streamlit_code_prompt,
     ).text
+
+    logging.info("Response from Gemini API:", response)
 
     if "```python" in response:
         response = response[response.index("```python")+9:response.rindex("```")]
@@ -118,13 +128,16 @@ def get_requirements_file(streamlit_code, **kwargs):
     prompt = PromptHandler().get_prompt("REQUIREMENTS_FILE_PROMPT")
 
     requirements_prompt = prompt.format(STREAMLIT_APP=streamlit_code)
-    print(requirements_prompt)
+    logging.info("Updated Prompt for requirements file:", requirements_prompt)
+    logging.info("================================================================")
 
     client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
     response = client.models.generate_content(
         model="gemini-2.0-flash-thinking-exp",
         contents=requirements_prompt,
     ).text
+
+    logging.info("Response from Gemini API:", response)
 
     if "```" in response:
         response = response[response.index("```")+3:response.rindex("```")]
@@ -133,18 +146,135 @@ def get_requirements_file(streamlit_code, **kwargs):
 
 def upload_files_to_github(lab_id, port, streamlit_code, requirements, **kwargs):
     # upload the streamlit code, requirements file, Dockerfile, docker-compose file, Github actions file, streamlit conf file to github repo
-    upload_file_to_github(lab_id, "app.py", streamlit_code, "Add Streamlit app")
-    upload_file_to_github(lab_id, "requirements.txt", requirements, "Add requirements.txt")
-    upload_file_to_github(lab_id, "Dockerfile", docker_file, "Add Dockerfile")
-    upload_file_to_github(lab_id, "docker-compose.yml", docker_compose_file.format(LAB_ID=lab_id, PORT=port) , "Add docker-compose file")
-    # upload_file_to_github(lab_id, ".github/workflows/main.yml", github_actions_file, "Add Github Actions file")
-    upload_file_to_github(lab_id, ".streamlit/config.toml", streamlit_conf_file.format(LAB_ID=lab_id, PORT=port), "Add Streamlit conf file")
+    # upload_file_to_github(lab_id, "app.py", streamlit_code, "Add Streamlit app")
+    # upload_file_to_github(lab_id, "requirements.txt", requirements, "Add requirements.txt")
+    files = [{
+        "file_path": "app.py", 
+        "content": streamlit_code,
+        "commit_message": "Add Streamlit app"
+    },
+    {
+        "file_path": "requirements.txt",
+        "content": requirements,
+        "commit_message": "Add requirements.txt"
+    },
+    {
+        "file_path": "Dockerfile",
+        "content": docker_file,
+        "commit_message": "Add Dockerfile"
+    },
+    {
+        "file_path": "docker-compose.yml",
+        "content": docker_compose_file.format(LAB_ID=lab_id, PORT=port),
+        "commit_message": "Add docker-compose file"
+    },
+    {
+        "file_path": ".streamlit/config.toml",
+        "content": streamlit_conf_file.format(LAB_ID=lab_id, PORT=port),
+        "commit_message": "Add Streamlit conf file"
+    }
+    ]
+    for file in files:
+        if upload_file_to_github(lab_id, file["file_path"], file["content"], file["commit_message"]):
+            logging.info(f"File {file['file_path']} uploaded successfully!")
+        else:
+            update_file_in_github(lab_id, file["file_path"], file["content"], file["commit_message"])
+            logging.info(f"File {file['file_path']} updated successfully!")
+    return True
+
+def send_notification(lab_id, port):
+    atlas_client = AtlasClient()
+    lab = atlas_client.find("lab_design", filter={"_id": ObjectId(lab_id)})[0]
+    users = lab.get("users", [])
+    message = f"Your lab is ready for review."
+    for user in users:
+        notifications_object = {
+            "username": user,
+            "creation_date": datetime.now(),
+            "type": "course_module",
+            "message": message,
+            "read": False,
+            "project_id": lab_id
+        }
+        atlas_client.insert("notifications", notifications_object)
+
+def final_task(lab_id, port, **kwargs):
+    # update the port in ports.txt file
+    with open("ports.txt", "w") as f:
+        f.write(str(port))
+    
+    # update the lab status in mongodb
+    mongodb_client = AtlasClient()
+    
+    lab_url = f"https://qucreate.qusandbox.com/{lab_id}"
+    repo_url = f"https://github.com/{GITHUB_USERNAME}/{lab_id}"
+    mongodb_client.update("lab_design", filter={"_id": ObjectId(lab_id)}, update={"$set": {"status": "Project Review", "lab_url": lab_url, "repo_url": repo_url}})
+    
+    # send notification to user
+    send_notification(lab_id, port)
+
+    # delete entry from mongo
+    mongodb_client.delete("in_lab_generation_queue", filter={"lab_id": lab_id})
+
+    print("Lab deployment complete!")
+
+
+
+def failure_callback(context):
+    """
+    Function to handle failures in the DAG.
+    1. Logs the error.
+    2. Updates MongoDB status to 'failed'.
+    3. Sends a failure notification.
+    4. Deletes the entry from MongoDB.
+    """
+    dag_run = context.get("dag_run")
+    entry_id = dag_run.conf.get("entry_id")
+
+    logging.error(f"DAG failed for entry ID: {entry_id}")
+
+    mongodb_client = AtlasClient()
+    entry = mongodb_client.find("in_lab_generation_queue", filter={"_id": ObjectId(entry_id)})
+
+    if entry:
+
+        entry = entry[0]
+        lab_id = entry.get("lab_id")
+        if not lab_id:
+            logging.error("No lab_id in the MongoDB entry")
+            return
+        
+        # Update MongoDB status to 'failed'
+        mongodb_client.update("lab_design", filter={"_id": ObjectId(lab_id)}, update={"$set": {"status": "Failed"}})
+        logging.info(f"Updated lab {lab_id} with failed status")
+
+        lab = mongodb_client.find("lab_design", filter={"_id": ObjectId(lab_id)})[0]
+        
+        # Send failure notification
+        message = f"Processing of the lab for {lab['lab_name']} failed. Please contact the administrator."
+        users = lab.get("users", [])
+        for user in users:
+            notification = {
+                "username": user,
+                "creation_date": datetime.datetime.now(),
+                "type": "course_module",
+                "message": message,
+                "read": False,
+                "project_id": lab_id
+            }
+            mongodb_client.insert("notifications", notification)
+
+        # Delete the entry from MongoDB
+        mongodb_client.delete("in_lab_generation_queue", filter={"_id": ObjectId(entry_id)})
+        logging.info(f"Deleted entry {entry_id} from MongoDB after failure.")
+
 
 default_args = {
     "owner": "airflow",
     "depends_on_past": False,
     "retries": 1,
     "retry_delay": timedelta(minutes=1),
+    "on_failure_callback": failure_callback,
 }
 
 # Name of your Airflow SSH connection to EC2
@@ -170,7 +300,7 @@ with DAG(
         task_id="get_streamlit_code",
         python_callable=get_streamlit_code,
         provide_context=True,
-        op_args=["{{ ti.xcom_pull(task_ids='fetch_lab_details')[0] }}"],
+        op_args=["{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}"],
     )
 
     get_requirements_file_task = PythonOperator(
@@ -184,7 +314,7 @@ with DAG(
         task_id="upload_files_to_github",
         python_callable=upload_files_to_github,
         provide_context=True,
-        op_args=["{{ ti.xcom_pull(task_ids='fetch_lab_details')[0] }}", "{{ ti.xcom_pull(task_ids='fetch_lab_details')[1] }}", "{{ ti.xcom_pull(task_ids='get_streamlit_code') }}", "{{ ti.xcom_pull(task_ids='get_requirements_file') }}"],
+        op_args=["{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}", "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}", "{{ ti.xcom_pull(task_ids='get_streamlit_code') }}", "{{ ti.xcom_pull(task_ids='get_requirements_file') }}"],
     )
 
     
@@ -217,23 +347,23 @@ LAB_ID="{LAB_ID}"
 echo "Pulling repo for lab: $LAB_ID"
 
 # Ensure folder exists
-mkdir -p /var/www/labs/$LAB_ID
-cd /var/www/labs/$LAB_ID
+mkdir -p /home/ubuntu/QuLabs
+cd /home/ubuntu/QuLabs
 
 # If you haven't cloned the repo, do so. Otherwise, just pull updates.
 # Adjust the GIT URL to your actual lab repository, or store it in Mongo if each lab has a unique repo.
-if [ ! -d .git ]; then
-    git clone https://github.com/{GITHUB_USERNAME}/${LAB_ID}-repo.git .
+if [ ! -d "$LAB_ID" ]; then
+    git clone https://github.com/{GITHUB_USERNAME}/{LAB_ID}.git
 else
     git pull origin main
 fi
 """
 
     build_pull_repo_command = PythonOperator(
-        task_id="build_ssh_command",
+        task_id="build_pull_repo_command",
         python_callable=build_ssh_command,
         op_args=[pull_remote_command, {
-            "LAB_ID": "{{ ti.xcom_pull(task_ids='fetch_lab_details')[0] }}",
+            "LAB_ID": "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
             "GITHUB_USERNAME": GITHUB_USERNAME
         }],
         provide_context=True
@@ -242,6 +372,8 @@ fi
 
     pull_repo_remote = SSHOperator(
         task_id="pull_repo_remote",
+        ssh_hook=SSHHook(ssh_conn_id=SSH_CONN_ID),
+        get_pty=True,
         ssh_conn_id=SSH_CONN_ID,
         command="{{ task_instance.xcom_pull(task_ids='build_pull_repo_command') }}",
         do_xcom_push=True,
@@ -257,15 +389,15 @@ fi
 
     docker_compose_command = """
 LAB_ID="{LAB_ID}"
-cd /var/www/labs/$LAB_ID
-docker-compose build
+cd /home/ubuntu/QuLabs/$LAB_ID
+sudo docker compose build
 """
 
     build_docker_compose_command = PythonOperator(
         task_id="build_docker_compose_command",
         python_callable=build_ssh_command,
-        op_args=[docker_compose_file, {
-            "LAB_ID": "{{ ti.xcom_pull(task_ids='fetch_lab_details')[0] }}",
+        op_args=[docker_compose_command, {
+            "LAB_ID": "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
         }],
         provide_context=True
     )
@@ -274,6 +406,8 @@ docker-compose build
     # 3) Docker-compose build
     docker_compose_build = SSHOperator(
         task_id="docker_compose_build",
+        ssh_hook=SSHHook(ssh_conn_id=SSH_CONN_ID),
+        get_pty=True,
         ssh_conn_id=SSH_CONN_ID,
         command="{{ task_instance.xcom_pull(task_ids='build_docker_compose_command') }}",
         do_xcom_push=True,
@@ -289,15 +423,15 @@ docker-compose build
 
     docker_compose_up_command = """
 LAB_ID="{LAB_ID}"
-cd /var/www/labs/$LAB_ID
-docker-compose up -d
+cd /home/ubuntu/QuLabs/$LAB_ID
+sudo docker compose up -d
 """
 
     build_docker_compose_up_command = PythonOperator(
         task_id="build_docker_compose_up_command",
         python_callable=build_ssh_command,
         op_args=[docker_compose_up_command, {
-            "LAB_ID": "{{ ti.xcom_pull(task_ids='fetch_lab_details')[0] }}",
+            "LAB_ID": "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
         }],
         provide_context=True
     )
@@ -305,7 +439,9 @@ docker-compose up -d
 
     # 4) Docker-compose up
     docker_compose_up = SSHOperator(
+        ssh_hook=SSHHook(ssh_conn_id=SSH_CONN_ID),
         task_id="docker_compose_up",
+        get_pty=True,
         ssh_conn_id=SSH_CONN_ID,
         command="{{ task_instance.xcom_pull(task_ids='build_docker_compose_up_command') }}",
         do_xcom_push=True,
@@ -333,8 +469,8 @@ echo "Updating Nginx snippet for lab: $LAB_ID on port $LAB_PORT"
         task_id="build_update_nginx_snippet_command",
         python_callable=build_ssh_command,
         op_args=[update_nginx_snippet_command, {
-            "LAB_ID": "{{ ti.xcom_pull(task_ids='fetch_lab_details')[0] }}",
-            "PORT": "{{ ti.xcom_pull(task_ids='fetch_lab_details')[1] }}",
+            "LAB_ID": "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
+            "PORT": "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}",
         }],
         provide_context=True
     )
@@ -344,7 +480,9 @@ echo "Updating Nginx snippet for lab: $LAB_ID on port $LAB_PORT"
     #    We assume lab_id uses a standard port assignment or we store the port in the DB too.
     #    Example: all labs run on 8501 for single-lab approach, or you store a dynamic port in Mongo.
     update_nginx_snippet = SSHOperator(
+        ssh_hook=SSHHook(ssh_conn_id=SSH_CONN_ID),
         task_id="update_nginx_snippet",
+        get_pty=True,
         ssh_conn_id=SSH_CONN_ID,
         command="{{ task_instance.xcom_pull(task_ids='build_update_nginx_snippet_command') }}",
         do_xcom_push=True,
@@ -357,6 +495,14 @@ echo "Updating Nginx snippet for lab: $LAB_ID on port $LAB_PORT"
         op_args=["update_nginx_snippet"],
         provide_context=True,
     )
+
+    end = PythonOperator(
+        task_id="end",
+        python_callable=final_task,
+        provide_context=True,
+        op_args=["{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}", "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}"],
+    )
+
 
     fetch_details_from_mongo_step >> \
     get_streamlit_code_task >> \
@@ -373,4 +519,5 @@ echo "Updating Nginx snippet for lab: $LAB_ID on port $LAB_PORT"
     print_docker_compose_up_output >> \
     build_update_nginx_snippet_command >> \
     update_nginx_snippet >> \
-    print_nginx_snippet_output
+    print_nginx_snippet_output >> \
+    end

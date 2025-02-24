@@ -1,1 +1,0 @@
-1. Make sure all output paths exists by running Path(output_path).mkdir before.
