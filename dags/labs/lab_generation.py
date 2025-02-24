@@ -14,6 +14,8 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.providers.ssh.operators.ssh import SSHOperator
 from airflow.providers.ssh.hooks.ssh import SSHHook
+from airflow.operators.bash import BashOperator
+
 
 # Local Application Imports
 from utils.prompt_handler import PromptHandler
@@ -278,13 +280,23 @@ default_args = {
 }
 
 # Name of your Airflow SSH connection to EC2
-SSH_CONN_ID = "ec2_ssh"
+# SSH_CONN_ID = "ec2_ssh"
+
+
+def build_command(command_template, inputs, **kwargs):
+    """
+    Format a multi-line shell command by injecting the inputs dict.
+    Example: command_template='echo "{MSG}"', inputs={'MSG': 'Hello'}
+    """
+    command = command_template.format(**inputs)
+    logging.info(f"Built command: {command}")
+    return command
 
 # DAG definition
 with DAG(
     dag_id="lab_generation_dag",
     default_args=default_args,
-    description="Fetch lab_id from MongoDB and deploy to EC2",
+    description="Fetch lab_id from MongoDB and deploy locally",
     start_date=datetime(2023, 1, 1),
     schedule_interval=None,  # Run on demand
     catchup=False,
@@ -314,33 +326,12 @@ with DAG(
         task_id="upload_files_to_github",
         python_callable=upload_files_to_github,
         provide_context=True,
-        op_args=["{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}", "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}", "{{ ti.xcom_pull(task_ids='get_streamlit_code') }}", "{{ ti.xcom_pull(task_ids='get_requirements_file') }}"],
+        op_args=["{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}", 
+                 "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}", 
+                 "{{ ti.xcom_pull(task_ids='get_streamlit_code') }}", 
+                 "{{ ti.xcom_pull(task_ids='get_requirements_file') }}"],
     )
 
-    
-    def print_ssh_output(task_id, **kwargs):
-        # Pull the output from the 'run_ssh_command' task
-        task_instance = kwargs["ti"]
-        ssh_output = task_instance.xcom_pull(task_ids=task_id)
-        decoded_output = base64.b64decode(ssh_output).decode("utf-8")
-        logging.info(f"SSH command returned:\n{decoded_output}")
-
-    def fail_ssh_and_return(expected_message, task_id, **kwargs):
-        # get the message, decode it and if it is not the same as the expected message, fail the task
-        task_instance = kwargs["ti"]
-        ssh_output = task_instance.xcom_pull(task_ids=task_id)
-        decoded_output = base64.b64decode(ssh_output).decode("utf-8")
-        
-        if expected_message != decoded_output:
-            # update in mongodb that there was an error. push notification to user.
-        
-            raise ValueError(f"Expected message not found in SSH output: {expected_message}") 
-        
-    def build_ssh_command(command, inputs, **kwargs):
-        formatted_command = command.format(**inputs)
-        logging.info(f"Built SSH command: {formatted_command}")
-        return formatted_command
-    
 
     pull_remote_command = """
 LAB_ID="{LAB_ID}"
@@ -361,32 +352,25 @@ fi
 
     build_pull_repo_command = PythonOperator(
         task_id="build_pull_repo_command",
-        python_callable=build_ssh_command,
-        op_args=[pull_remote_command, {
-            "LAB_ID": "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
-            "GITHUB_USERNAME": GITHUB_USERNAME
-        }],
+        python_callable=build_command,
+        op_args=[
+            pull_remote_command, 
+            {
+                "LAB_ID": "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
+                "GITHUB_USERNAME": GITHUB_USERNAME
+            }
+        ],
         provide_context=True
     )
 
 
-    pull_repo_remote = SSHOperator(
+    pull_repo_remote = BashOperator(
         task_id="pull_repo_remote",
-        ssh_hook=SSHHook(ssh_conn_id=SSH_CONN_ID),
-        get_pty=True,
-        ssh_conn_id=SSH_CONN_ID,
-        command="{{ task_instance.xcom_pull(task_ids='build_pull_repo_command') }}",
+        bash_command="{{ task_instance.xcom_pull(task_ids='build_pull_repo_command') }}",
         do_xcom_push=True,
     )
 
-    # print the output of the pull_repo_remote task
-    print_pull_repo_output = PythonOperator(
-        task_id="print_pull_repo_output",
-        python_callable=print_ssh_output,
-        op_args=["pull_repo_remote"],
-        provide_context=True,
-    )
-
+    
     docker_compose_command = """
 LAB_ID="{LAB_ID}"
 cd /home/ubuntu/QuLabs/$LAB_ID
@@ -395,7 +379,7 @@ sudo docker compose build
 
     build_docker_compose_command = PythonOperator(
         task_id="build_docker_compose_command",
-        python_callable=build_ssh_command,
+        python_callable=build_command,
         op_args=[docker_compose_command, {
             "LAB_ID": "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
         }],
@@ -404,22 +388,12 @@ sudo docker compose build
 
 
     # 3) Docker-compose build
-    docker_compose_build = SSHOperator(
+    docker_compose_build = BashOperator(
         task_id="docker_compose_build",
-        ssh_hook=SSHHook(ssh_conn_id=SSH_CONN_ID),
-        get_pty=True,
-        ssh_conn_id=SSH_CONN_ID,
-        command="{{ task_instance.xcom_pull(task_ids='build_docker_compose_command') }}",
+        bash_command="{{ task_instance.xcom_pull(task_ids='build_docker_compose_command') }}",
         do_xcom_push=True,
     )
 
-    # print the output of the docker_compose_build task
-    print_docker_compose_output = PythonOperator(
-        task_id="print_docker_compose_output",
-        python_callable=print_ssh_output,
-        op_args=["docker_compose_build"],
-        provide_context=True,
-    )
 
     docker_compose_up_command = """
 LAB_ID="{LAB_ID}"
@@ -429,7 +403,7 @@ sudo docker compose up -d
 
     build_docker_compose_up_command = PythonOperator(
         task_id="build_docker_compose_up_command",
-        python_callable=build_ssh_command,
+        python_callable=build_command,
         op_args=[docker_compose_up_command, {
             "LAB_ID": "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
         }],
@@ -438,24 +412,11 @@ sudo docker compose up -d
 
 
     # 4) Docker-compose up
-    docker_compose_up = SSHOperator(
-        ssh_hook=SSHHook(ssh_conn_id=SSH_CONN_ID),
+    docker_compose_up = BashOperator(
         task_id="docker_compose_up",
-        get_pty=True,
-        ssh_conn_id=SSH_CONN_ID,
-        command="{{ task_instance.xcom_pull(task_ids='build_docker_compose_up_command') }}",
+        bash_command="{{ task_instance.xcom_pull(task_ids='build_docker_compose_up_command') }}",
         do_xcom_push=True,
     )
-
-    # print the output of the docker_compose_up task
-    print_docker_compose_up_output = PythonOperator(
-        task_id="print_docker_compose_up_output",
-        python_callable=print_ssh_output,
-        op_args=["docker_compose_up"],
-        provide_context=True,
-    )
-
-    # conditional -> if the above command succeeds, update the port in ports.txt file to port+1
 
     update_nginx_snippet_command = """
 LAB_ID="{LAB_ID}"
@@ -467,7 +428,7 @@ echo "Updating Nginx snippet for lab: $LAB_ID on port $LAB_PORT"
 
     build_update_nginx_snippet_command = PythonOperator(
         task_id="build_update_nginx_snippet_command",
-        python_callable=build_ssh_command,
+        python_callable=build_command,
         op_args=[update_nginx_snippet_command, {
             "LAB_ID": "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
             "PORT": "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}",
@@ -479,22 +440,12 @@ echo "Updating Nginx snippet for lab: $LAB_ID on port $LAB_PORT"
     # 5) Update Nginx snippet
     #    We assume lab_id uses a standard port assignment or we store the port in the DB too.
     #    Example: all labs run on 8501 for single-lab approach, or you store a dynamic port in Mongo.
-    update_nginx_snippet = SSHOperator(
-        ssh_hook=SSHHook(ssh_conn_id=SSH_CONN_ID),
+    update_nginx_snippet = BashOperator(
         task_id="update_nginx_snippet",
-        get_pty=True,
-        ssh_conn_id=SSH_CONN_ID,
-        command="{{ task_instance.xcom_pull(task_ids='build_update_nginx_snippet_command') }}",
+        bash_command="{{ task_instance.xcom_pull(task_ids='build_update_nginx_snippet_command') }}",
         do_xcom_push=True,
     )
 
-    # print the output of the update_nginx_snippet task
-    print_nginx_snippet_output = PythonOperator(
-        task_id="print_nginx_snippet_output",
-        python_callable=print_ssh_output,
-        op_args=["update_nginx_snippet"],
-        provide_context=True,
-    )
 
     end = PythonOperator(
         task_id="end",
@@ -510,14 +461,10 @@ echo "Updating Nginx snippet for lab: $LAB_ID on port $LAB_PORT"
     upload_files_to_github_task >> \
     build_pull_repo_command >> \
     pull_repo_remote >> \
-    print_pull_repo_output >> \
     build_docker_compose_command >> \
     docker_compose_build >> \
-    print_docker_compose_output >> \
     build_docker_compose_up_command >> \
     docker_compose_up >> \
-    print_docker_compose_up_output >> \
     build_update_nginx_snippet_command >> \
     update_nginx_snippet >> \
-    print_nginx_snippet_output >> \
     end
