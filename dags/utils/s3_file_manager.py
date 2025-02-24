@@ -57,9 +57,9 @@ class S3FileManager:
         """
 
         # Initialize AWS credentials and S3 client
-        self.aws_access_key_id = os.environ.get("AWS_ACCESS_KEY")
-        self.aws_secret_access_key = os.environ.get("AWS_SECRET_KEY")
-        self.bucket_name = os.environ.get("AWS_BUCKET_NAME")
+        self.aws_access_key_id = os.getenv("AWS_ACCESS_KEY")
+        self.aws_secret_access_key = os.getenv("AWS_SECRET_KEY")
+        self.bucket_name = os.getenv("AWS_BUCKET_NAME")
         self.s3_client = boto3.client(
             's3',
             aws_access_key_id=self.aws_access_key_id,

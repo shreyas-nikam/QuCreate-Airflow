@@ -40,7 +40,7 @@ class AtlasClient ():
         Aggregates documents in a collection.
     """
 
-    def __init__(self, altas_uri=os.environ.get("MONGO_URI"), dbname=os.environ.get("MONGO_DB")):
+    def __init__(self, altas_uri=os.getenv("MONGO_URI"), dbname=os.getenv("MONGO_DB")):
         """
         Constructor for the AtlasClient class.
 

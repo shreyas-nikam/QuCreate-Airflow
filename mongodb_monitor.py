@@ -9,7 +9,7 @@ load_dotenv()
 # MongoDB Connection Details
 MONGO_URI = os.getenv("MONGO_URI")
 # MongoDB Atlas Connection Details
-DATABASE_NAME = "test"
+DATABASE_NAME = os.getenv("MONGO_DB")
 
 # Collections and Their Corresponding Airflow DAGs
 COLLECTIONS_TO_DAGS = {

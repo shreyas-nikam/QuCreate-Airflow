@@ -108,9 +108,9 @@ def get_streamlit_code(lab_id, **kwargs):
     logging.info("Updated prompt for generating streamlit code:", streamlit_code_prompt)
     logging.info("================================================================")
 
-    client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
     response = client.models.generate_content(
-        model=os.environ.get("GEMINI_MODEL"),
+        model=os.getenv("GEMINI_MODEL"),
         contents=streamlit_code_prompt,
     ).text
 
@@ -131,9 +131,9 @@ def get_requirements_file(streamlit_code, **kwargs):
     logging.info("Updated Prompt for requirements file:", requirements_prompt)
     logging.info("================================================================")
 
-    client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
     response = client.models.generate_content(
-        model=os.environ.get("GEMINI_MODEL"),
+        model=os.getenv("GEMINI_MODEL"),
         contents=requirements_prompt,
     ).text
 
