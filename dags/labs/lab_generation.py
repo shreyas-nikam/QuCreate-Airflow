@@ -110,7 +110,7 @@ def get_streamlit_code(lab_id, **kwargs):
 
     client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
     response = client.models.generate_content(
-        model="gemini-2.0-flash-thinking-exp",
+        model=os.environ.get("GEMINI_MODEL"),
         contents=streamlit_code_prompt,
     ).text
 
@@ -133,7 +133,7 @@ def get_requirements_file(streamlit_code, **kwargs):
 
     client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
     response = client.models.generate_content(
-        model="gemini-2.0-flash-thinking-exp",
+        model=os.environ.get("GEMINI_MODEL"),
         contents=requirements_prompt,
     ).text
 
