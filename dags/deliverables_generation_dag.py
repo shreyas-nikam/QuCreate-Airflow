@@ -162,7 +162,7 @@ def failure_callback(context):
         course, module = _get_course_and_module(course_id, module_id)
 
         for index, module in enumerate(course['modules']):
-            if module['module_id'] == module_id:
+            if module['module_id'] == ObjectId(module_id):
                 course['modules'][index]['status'] = 'Failed'
                 break
 

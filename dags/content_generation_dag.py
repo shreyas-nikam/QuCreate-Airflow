@@ -121,8 +121,7 @@ def update_mongodb_with_resources_step(course_id, module_id, slide_output_link, 
     }
     module["pre_processed_content"].append(module_info_resource)
     module["status"] = "Content Review"
-    course["modules"] = [module if m.get("module_id") == ObjectId(
-        module_id) else m for m in course.get("modules", [])]
+    course["modules"] = [module if m.get("module_id") == ObjectId(module_id) else m for m in course.get("modules", [])]
     mongodb_client.update("course_design", filter={"_id": ObjectId(course_id)}, update={
         "$set": {"modules": course["modules"]}
     })
@@ -186,7 +185,7 @@ def failure_callback(context):
         course, module = _get_course_and_module(course_id, module_id)
 
         for index, module in enumerate(course['modules']):
-            if module['module_id'] == module_id:
+            if module['module_id'] == ObjectId(module_id):
                 course['modules'][index]['status'] = 'Failed'
                 break
 

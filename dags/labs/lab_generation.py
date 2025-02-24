@@ -75,7 +75,7 @@ enableXsrfProtection = false
 
 def fetch_details_from_mongo_task(**kwargs):
     entry_id = kwargs["dag_run"].conf.get("entry_id")
-    print(entry_id)
+    logging.info(entry_id)
     
     logging.info(f"Fetching details for entry with ID: {entry_id}")
     with open("ports.txt", "r") as f:
@@ -216,7 +216,7 @@ def final_task(lab_id, port, **kwargs):
     # delete entry from mongo
     mongodb_client.delete("in_lab_generation_queue", filter={"lab_id": lab_id})
 
-    print("Lab deployment complete!")
+    logging.info("Lab deployment complete!")
 
 
 
@@ -256,7 +256,7 @@ def failure_callback(context):
         for user in users:
             notification = {
                 "username": user,
-                "creation_date": datetime.datetime.now(),
+                "creation_date": datetime.now(),
                 "type": "course_module",
                 "message": message,
                 "read": False,
@@ -323,7 +323,7 @@ with DAG(
         task_instance = kwargs["ti"]
         ssh_output = task_instance.xcom_pull(task_ids=task_id)
         decoded_output = base64.b64decode(ssh_output).decode("utf-8")
-        print(f"SSH command returned:\n{decoded_output}")
+        logging.info(f"SSH command returned:\n{decoded_output}")
 
     def fail_ssh_and_return(expected_message, task_id, **kwargs):
         # get the message, decode it and if it is not the same as the expected message, fail the task
@@ -338,7 +338,7 @@ with DAG(
         
     def build_ssh_command(command, inputs, **kwargs):
         formatted_command = command.format(**inputs)
-        print(f"Built SSH command: {formatted_command}")
+        logging.info(f"Built SSH command: {formatted_command}")
         return formatted_command
     
 
