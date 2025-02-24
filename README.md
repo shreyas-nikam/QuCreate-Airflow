@@ -44,9 +44,9 @@ sudo apt install libreoffice
 3. Delete the md2pptx folder and git clone md2pptx inside the repo. `git clone https://github.com/MartinPacker/md2pptx.git`
 4. Run `airflow db init` to initialize the database. Change the following lines in airflow.cfg file: auth_backends = airflow.api.auth.backend.basic_auth and load_examples=False
 5. Check if the dags folder is in the airflow home (Run `airflow dags list` to check).
-6. Run airflow webserver (for development) (for deployment consider using pm2)
-7. Run airflow scheduler (for development) (for deployment, consider using pm2)
-8. Run `python mongodb_monitor` to run the sensor for detecting updates in the job queue. (for development) (for deployment consider using pm2)
+6. Run airflow webserver (for development) (for deployment consider using pm2 `pm2 start "airflow webserver" --name webserver`)
+7. Run airflow scheduler (for development) (for deployment, consider using pm2 `pm2 start "airflow scheduler" --name scheduler`)
+8. Run `python mongodb_monitor` to run the sensor for detecting updates in the job queue. (for development) (for deployment consider using pm2 `pm2 start mongodb_monitor.py --interpreter /home/user1/QuCreate-Airflow/venv/bin/python --name monitor`)
 9. Copy the .pem file to the QuCreate-Airflow folder to connect to the ec2 instance for deploying labs.
 10. Install ssh provider `pip install apache-airflow-providers-ssh`
 11. Set up an ec2 connection
