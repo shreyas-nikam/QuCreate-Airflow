@@ -245,7 +245,7 @@ def failure_callback(context):
             return
         
         # Update MongoDB status to 'failed'
-        mongodb_client.update("lab_design", filter={"_id": ObjectId(lab_id)}, update={"$set": {"status": "Failed"}})
+        mongodb_client.update("lab_design", filter={"_id": ObjectId(lab_id)}, update={"$set": {"status": "Lab Generation Failed"}})
         logging.info(f"Updated lab {lab_id} with failed status")
 
         lab = mongodb_client.find("lab_design", filter={"_id": ObjectId(lab_id)})[0]

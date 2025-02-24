@@ -47,7 +47,7 @@ def failure_callback(context):
 
         for index, module in enumerate(course['modules']):
             if module['module_id'] == ObjectId(module_id):
-                course['modules'][index]['status'] = 'Failed'
+                course['modules'][index]['status'] = 'Structure Generation Failed'
                 break
 
         mongodb_client.update("course_design", filter={"_id": ObjectId(course_id)}, update={"$set": {"modules": course["modules"]}})

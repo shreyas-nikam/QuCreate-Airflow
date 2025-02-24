@@ -88,7 +88,7 @@ def failure_callback(context):
         course_id = entry[0].get("course_id")
         course = mongodb_client.find("course_design", filter={"_id": ObjectId(course_id)})[0]
 
-        mongodb_client.update("course_design", filter={"_id": ObjectId(course_id)}, update={"$set": {"status": "Failed"}})
+        mongodb_client.update("course_design", filter={"_id": ObjectId(course_id)}, update={"$set": {"status": "Publishing Failed"}})
         logging.info(f"Updated course {course_id} status to 'Failed' in MongoDB.")
         # Send failure notification
         message = f"Processing of the publishing for course {course['course_name']} failed. Please contact the administrator."
