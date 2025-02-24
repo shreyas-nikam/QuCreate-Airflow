@@ -1,3 +1,4 @@
+from utils.mongodb_client import AtlasClient
 from utils.llm import LLM
 import json
 import asyncio
@@ -470,6 +471,7 @@ async def generate_outline(module_id, instructions):
         similarity_top_k=5,
         llm=outline_gen_llm,
     )
+    atlas_client = AtlasClient()
     logging.info("Instructions for outline generation:\n"+instructions)
     response = query_engine.query(instructions)
     response = response.response

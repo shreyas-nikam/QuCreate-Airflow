@@ -9,6 +9,7 @@ from bson.objectid import ObjectId
 from airflow.utils.edgemodifier import Label
 from airflow.utils.trigger_rule import TriggerRule
 import datetime
+from course.structure_generation import _get_course_and_module
 
 # Steps:
 # 1. Get the course ID to be published.
@@ -180,14 +181,13 @@ with DAG(
         op_args=["{{ dag_run.conf.entry_id }}"],
         trigger_rule=TriggerRule.ONE_SUCCESS
     )
-
+    
     add_notification_step = PythonOperator(
         task_id="add_notification",
         python_callable=add_notification_task,
         provide_context=True,
-        op_args=["{{ dag_run.conf.entry_id }}"],
-        trigger_rule=TriggerRule.ONE_SUCCESS
-    )
+        op_args=["{{ dag_run.conf.entry_id }}", "{{ ti.xcom_pull(task_ids='get_course_id') }}"]
+    )    
 
     end = EmptyOperator(task_id="end")
 
