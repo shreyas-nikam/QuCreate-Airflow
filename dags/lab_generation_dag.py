@@ -746,12 +746,14 @@ sudo cp -r /home/ubuntu/QuLabs/documentation/$LAB_ID/$LAB_ID/. /var/www/codelabs
         task_id="end",
         python_callable=final_task,
         provide_context=True,
-        op_args=["{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}", "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}"],
+        op_args=["{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}", 
+                 "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}"],
     )
 
 
     fetch_details_from_mongo_step >> \
     get_streamlit_code_task >> \
+    get_claat_codelab_task >> \
     get_requirements_file_task >> \
     get_readme_file_task >> \
     upload_files_to_github_task >> \
@@ -763,4 +765,6 @@ sudo cp -r /home/ubuntu/QuLabs/documentation/$LAB_ID/$LAB_ID/. /var/www/codelabs
     docker_compose_up >> \
     build_update_nginx_snippet_command >> \
     update_nginx_snippet >> \
+    build_claat_command >> \
+    claat_command_step >> \
     end
