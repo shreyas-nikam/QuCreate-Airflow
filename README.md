@@ -3,6 +3,9 @@
 ```bash
 sudo apt update
 sudo apt install libreoffice
+sudo apt-get install -y golang
+sudo apt install snapd
+go install github.com/googlecodelabs/tools/claat@latest
 ```
 
 2. Create a virtual environment using `python3 -m venv .venv`

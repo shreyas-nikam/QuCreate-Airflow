@@ -232,6 +232,26 @@ def get_streamlit_code(lab_id, **kwargs):
 
     return response
 
+
+def get_claat_codelab(lab_id, streamlit_code, **kwargs):
+    prompt = PromptHandler().get_prompt("CODELAB_PROMPT")
+    codelab_prompt = prompt.format(STREAMLIT_CODE=streamlit_code)
+    logging.info("Updated prompt for generating codelab:", codelab_prompt)
+    logging.info("================================================================")
+
+    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    response = client.models.generate_content(
+        model=os.getenv("GEMINI_MODEL"),
+        contents=codelab_prompt,
+    ).text
+
+    logging.info("Response from Gemini API:", response)
+
+    response = "id: "+lab_id+"\n\n"+response.replace("---", "")
+
+    return response
+
+
 def get_requirements_file(streamlit_code, **kwargs):
     """
     Generate a requirements.txt file content based on provided Streamlit code.
@@ -432,11 +452,14 @@ def final_task(lab_id, port, **kwargs):
     mongodb_client = AtlasClient()
     lab_url = f"https://qucreate.qusandbox.com/{lab_id}"
     repo_url = f"https://github.com/{GITHUB_USERNAME}/{lab_id}"
+    documentation_url = f"https://qucreate.qusandbox.com/documentation/{lab_id}/"
     mongodb_client.update("lab_design", 
                             filter={"_id": ObjectId(lab_id)}, 
                             update={"$set": {"status": "Project Review", 
                                         "lab_url": lab_url, 
-                                        "repo_url": repo_url}})
+                                        "repo_url": repo_url,
+                                        "documentation_url": documentation_url}})
+    logging.info(f"Updated lab {lab_id} with review status and URLs")
     
     # Send notification to users
     send_notification(lab_id, port)
@@ -543,6 +566,14 @@ with DAG(
         op_args=["{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}"],
     )
 
+    get_claat_codelab_task = PythonOperator(
+        task_id="get_claat_codelab",
+        python_callable=get_claat_codelab,
+        provide_context=True,
+        op_args=["{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
+                    "{{ ti.xcom_pull(task_ids='get_streamlit_code') }}"],
+    )
+    
     get_requirements_file_task = PythonOperator(
         task_id="get_requirements_file",
         python_callable=get_requirements_file,
@@ -684,6 +715,32 @@ echo "Updating Nginx snippet for lab: $LAB_ID on port $LAB_PORT"
         do_xcom_push=True,
     )
 
+
+    # 6) Claat command and documentation
+    claat_command = """
+export LAB_ID="{LAB_ID}"
+nano /home/ubuntu/QuLabs/documentation/$LAB_ID/documentation.md
+echo {CLAAT_DOCUMENTATION} > /home/ubuntu/QuLabs/documentation/$LAB_ID/documentation.md
+claat export /home/ubuntu/QuLabs/documentation/$LAB_ID/documentation.md
+sudo mkdir /var/www/codelabs/$LAB_ID
+sudo cp -r /home/ubuntu/QuLabs/documentation/$LAB_ID/$LAB_ID/. /var/www/codelabs/$LAB_ID
+"""
+
+    build_claat_command = PythonOperator(
+        task_id="build_claat_command",
+        python_callable=build_command,
+        op_args=[claat_command, {
+            "LAB_ID": "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
+            "CLAAT_DOCUMENTATION": "{{ ti.xcom_pull(task_ids='get_claat_codelab') }}"
+        }],
+        provide_context=True
+    )
+
+    claat_command_step = BashOperator(
+        task_id="claat_command",
+        bash_command="{{ task_instance.xcom_pull(task_ids='build_claat_command') }}",
+        do_xcom_push=True,
+    )
 
     end = PythonOperator(
         task_id="end",
