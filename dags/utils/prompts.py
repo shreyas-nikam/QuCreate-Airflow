@@ -549,7 +549,7 @@ will apply special button-esque styling to any link that begins with the word
 
 Streamlit Application: 
 
-{STREAMLIT_APP}
+{STREAMLIT_CODE}
 """
 
 
