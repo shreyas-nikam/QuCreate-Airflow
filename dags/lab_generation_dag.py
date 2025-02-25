@@ -234,7 +234,7 @@ def get_streamlit_code(lab_id, **kwargs):
 
 
 def get_claat_codelab(lab_id, streamlit_code, **kwargs):
-    prompt = PromptHandler().get_prompt("CODELAB_PROMPT")
+    prompt = PromptHandler().get_prompt("GET_CODELAB_PROMPT")
     codelab_prompt = prompt.format(STREAMLIT_CODE=streamlit_code)
     logging.info("Updated prompt for generating codelab:", codelab_prompt)
     logging.info("================================================================")
