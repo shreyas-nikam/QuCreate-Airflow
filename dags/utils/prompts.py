@@ -421,6 +421,28 @@ matplotlib
 Given Streamlit application:
 {STREAMLIT_APP}""",
 
+"README_FILE_PROMPT": """
+Generate a README file for the Streamlit application based on the provided technical specification document.
+
+The README file should include the following sections:
+- Project Title
+- Description
+- Installation
+- Usage
+- Credits
+- License
+
+Ensure that the README file is comprehensive and provides clear instructions for installation and usage. Include any necessary details to run the Streamlit application successfully.
+
+# Output Format
+
+Enclose the generated README file within three backticks to ensure proper formatting as a text file:
+```
+```
+
+{STREAMLIT_APP}
+""",
+
 
 }
 

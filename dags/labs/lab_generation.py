@@ -144,9 +144,27 @@ def get_requirements_file(streamlit_code, **kwargs):
     if "```" in response:
         response = response[response.index("```")+3:response.rindex("```")]
     return response
-    
 
-def upload_files_to_github(lab_id, port, streamlit_code, requirements, **kwargs):
+def get_readme_file(lab_id, streamlit_code, **kwargs):
+    # get prompt, fill it with lab_id, return response
+    prompt = PromptHandler().get_prompt("README_FILE_PROMPT")
+    readme_prompt = prompt.format(LAB_ID=lab_id)
+    prompt = prompt.format(STREAMLIT_CODE=streamlit_code)
+    logging.info("Updated prompt for README file:", readme_prompt)
+    logging.info("================================================================")
+
+    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    response = client.models.generate_content(
+        model=os.getenv("GEMINI_MODEL"),
+        contents=readme_prompt,
+    ).text
+
+    logging.info("Response from Gemini API:", response)
+
+    return response
+
+
+def upload_files_to_github(lab_id, port, streamlit_code, requirements, readme, **kwargs):
     # upload the streamlit code, requirements file, Dockerfile, docker-compose file, Github actions file, streamlit conf file to github repo
     # upload_file_to_github(lab_id, "app.py", streamlit_code, "Add Streamlit app")
     # upload_file_to_github(lab_id, "requirements.txt", requirements, "Add requirements.txt")
@@ -159,6 +177,11 @@ def upload_files_to_github(lab_id, port, streamlit_code, requirements, **kwargs)
         "file_path": "requirements.txt",
         "content": requirements,
         "commit_message": "Add requirements.txt"
+    },
+    {
+        "file_path": "README.md",
+        "content": readme,
+        "commit_message": "Add README file"
     },
     {
         "file_path": "Dockerfile",
@@ -193,7 +216,7 @@ def send_notification(lab_id, port):
         notifications_object = {
             "username": user,
             "creation_date": datetime.now(),
-            "type": "course_module",
+            "type": "lab",
             "message": message,
             "read": False,
             "project_id": lab_id
@@ -322,6 +345,14 @@ with DAG(
         op_args=["{{ ti.xcom_pull(task_ids='get_streamlit_code') }}"],
     )
 
+    get_readme_file_task = PythonOperator(
+        task_id="get_readme_file",
+        python_callable=get_readme_file,
+        provide_context=True,
+        op_args=["{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}", 
+                 "{{ ti.xcom_pull(task_ids='get_streamlit_code') }}"],
+    )
+
     upload_files_to_github_task = PythonOperator(
         task_id="upload_files_to_github",
         python_callable=upload_files_to_github,
@@ -329,7 +360,9 @@ with DAG(
         op_args=["{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}", 
                  "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}", 
                  "{{ ti.xcom_pull(task_ids='get_streamlit_code') }}", 
-                 "{{ ti.xcom_pull(task_ids='get_requirements_file') }}"],
+                 "{{ ti.xcom_pull(task_ids='get_requirements_file') }}",
+                 "{{ ti.xcom_pull(task_ids='get_readme_file') }}"
+                 ],
     )
 
 
@@ -458,6 +491,7 @@ echo "Updating Nginx snippet for lab: $LAB_ID on port $LAB_PORT"
     fetch_details_from_mongo_step >> \
     get_streamlit_code_task >> \
     get_requirements_file_task >> \
+    get_readme_file_task >> \
     upload_files_to_github_task >> \
     build_pull_repo_command >> \
     pull_repo_remote >> \
