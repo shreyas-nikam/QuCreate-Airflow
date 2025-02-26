@@ -5,6 +5,9 @@ sudo apt update
 sudo apt install libreoffice
 ```
 
+- Install claat
+
+
 2. Create a virtual environment using `python3 -m venv .venv`
 
 - Create .env file with the following variables:
