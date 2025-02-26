@@ -716,15 +716,53 @@ echo "Updating Nginx snippet for lab: $LAB_ID on port $LAB_PORT"
     )
 
 
-    # 6) Claat command and documentation
+    # # 6) Claat command and documentation
+    # def build_script(**kwargs):
+    #     lab_id = kwargs['ti'].xcom_pull(task_ids='fetch_details_from_mongo')[0]
+    #     claat_documentation = kwargs['ti'].xcom_pull(task_ids='get_claat_codelab')
+
+    #     # Define the path for the temporary script
+    #     script_path = f"/tmp/claat_command_{lab_id}.sh"
+
+    #     # Create the script content
+    #     script_content = f"""
+    #     #!/bin/bash
+    #     export LAB_ID="{lab_id}"
+    #     mkdir -p /home/ubuntu/QuLabs/documentation/$LAB_ID
+    #     echo "{claat_documentation}" > /home/ubuntu/QuLabs/documentation/$LAB_ID/documentation.md
+    #     claat export /home/ubuntu/QuLabs/documentation/$LAB_ID/documentation.md
+    #     sudo mkdir -p /var/www/codelabs/$LAB_ID
+    #     sudo cp -r /home/ubuntu/QuLabs/documentation/$LAB_ID/$LAB_ID/. /var/www/codelabs/$LAB_ID
+    #     """
+
+    #     # Write the script to the temporary file
+    #     with open(script_path, 'w') as script_file:
+    #         script_file.write(script_content)
+
+    #     # Make the script executable
+    #     os.chmod(script_path, 0o755)
+
+    #     return script_path
+
+    #  # Task to build the command
+    # build_claat_command = PythonOperator(
+    #     task_id="build_claat_command",
+    #     python_callable=build_command,
+    #     provide_context=True,
+    # )
+
+    # # Task to execute the command
+    # claat_command_step = BashOperator(
+    #     task_id="claat_command",
+    #     bash_command="{{ task_instance.xcom_pull(task_ids='build_claat_command') }}",
+    #     do_xcom_push=True,
+    # )
+
     claat_command = """
 export LAB_ID="{LAB_ID}"
 mkdir -p /home/ubuntu/QuLabs/documentation/$LAB_ID
 touch /home/ubuntu/QuLabs/documentation/$LAB_ID/documentation.md
-cat <<EOF > /home/ubuntu/QuLabs/documentation/$LAB_ID/documentation.md
-{CLAAT_DOCUMENTATION}
-EOF
-
+echo "{CLAAT_DOCUMENTATION}" > /home/ubuntu/QuLabs/documentation/$LAB_ID/documentation.md
 claat export /home/ubuntu/QuLabs/documentation/$LAB_ID/documentation.md
 sudo mkdir /var/www/codelabs/$LAB_ID
 sudo cp -r /home/ubuntu/QuLabs/documentation/$LAB_ID/$LAB_ID/. /var/www/codelabs/$LAB_ID
