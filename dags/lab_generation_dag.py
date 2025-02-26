@@ -721,7 +721,10 @@ echo "Updating Nginx snippet for lab: $LAB_ID on port $LAB_PORT"
 export LAB_ID="{LAB_ID}"
 mkdir -p /home/ubuntu/QuLabs/documentation/$LAB_ID
 nano /home/ubuntu/QuLabs/documentation/$LAB_ID/documentation.md
-cat <<EOF > /home/ubuntu/QuLabs/documentation/$LAB_ID/documentation.md\n{CLAAT_DOCUMENTATION}\nEOF
+cat <<EOF > /home/ubuntu/QuLabs/documentation/$LAB_ID/documentation.md
+{CLAAT_DOCUMENTATION}
+EOF
+
 claat export /home/ubuntu/QuLabs/documentation/$LAB_ID/documentation.md
 sudo mkdir /var/www/codelabs/$LAB_ID
 sudo cp -r /home/ubuntu/QuLabs/documentation/$LAB_ID/$LAB_ID/. /var/www/codelabs/$LAB_ID
