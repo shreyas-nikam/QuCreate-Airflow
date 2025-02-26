@@ -733,7 +733,8 @@ echo "Updating Nginx snippet for lab: $LAB_ID on port $LAB_PORT"
 
     claat_command = """
 export LAB_ID="{LAB_ID}"
-claat export /home/ubuntu/QuLabs/documentation/$LAB_ID/documentation.md
+cd /home/ubuntu/QuLabs/documentation/$LAB_ID/
+claat export documentation.md
 sudo mkdir /var/www/codelabs/$LAB_ID
 sudo cp -r /home/ubuntu/QuLabs/documentation/$LAB_ID/$LAB_ID/. /var/www/codelabs/$LAB_ID
 """
