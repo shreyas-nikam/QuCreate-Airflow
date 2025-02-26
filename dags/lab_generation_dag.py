@@ -512,7 +512,7 @@ def failure_callback(context):
             notification = {
                 "username": user,
                 "creation_date": datetime.now(),
-                "type": "course_module",
+                "type": "lab",
                 "message": message,
                 "read": False,
                 "project_id": lab_id
@@ -718,6 +718,7 @@ echo "Updating Nginx snippet for lab: $LAB_ID on port $LAB_PORT"
     # 6) Claat command and documentation
     claat_command = """
 export LAB_ID="{LAB_ID}"
+mkdir -p /home/ubuntu/QuLabs/documentation/$LAB_ID
 nano /home/ubuntu/QuLabs/documentation/$LAB_ID/documentation.md
 echo {CLAAT_DOCUMENTATION} > /home/ubuntu/QuLabs/documentation/$LAB_ID/documentation.md
 claat export /home/ubuntu/QuLabs/documentation/$LAB_ID/documentation.md
