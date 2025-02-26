@@ -715,74 +715,43 @@ echo "Updating Nginx snippet for lab: $LAB_ID on port $LAB_PORT"
         do_xcom_push=True,
     )
 
-
-    # 6) Claat command and documentation
-    def build_script(**kwargs):
-        lab_id = kwargs['ti'].xcom_pull(task_ids='fetch_details_from_mongo')[0]
-        claat_documentation = kwargs['ti'].xcom_pull(task_ids='get_claat_codelab')
-
-        # Define the path for the temporary script
-        script_path = f"/tmp/claat_command_{lab_id}.sh"
-
-        # Create the script content
-        script_content = f"""
-        #!/bin/bash
-        export LAB_ID="{lab_id}"
-        mkdir -p /home/ubuntu/QuLabs/documentation/$LAB_ID
-        echo "{claat_documentation}" > /home/ubuntu/QuLabs/documentation/$LAB_ID/documentation.md
-        claat export /home/ubuntu/QuLabs/documentation/$LAB_ID/documentation.md
-        sudo mkdir -p /var/www/codelabs/$LAB_ID
-        sudo cp -r /home/ubuntu/QuLabs/documentation/$LAB_ID/$LAB_ID/. /var/www/codelabs/$LAB_ID
-        """
-
-        # Write the script to the temporary file
-        with open(script_path, 'w') as script_file:
-            script_file.write(script_content)
-
-        # Make the script executable
-        os.chmod(script_path, 0o755)
-
-        return script_path
-
-     # Task to build the command
-    build_claat_command = PythonOperator(
-        task_id="build_claat_command",
-        python_callable=build_script,
+    def create_claat_file(lab_id, claat_documentation, **kwargs):
+        file_path = f"/home/ubuntu/QuLabs/documentation/{lab_id}/documentation.md"
+        Path(f"/home/ubuntu/QuLabs/documentation/{lab_id}").mkdir(parents=True, exist_ok=True)
+        with open(file_path, "w") as f:
+            f.write(claat_documentation)
+        return file_path
+    
+    create_claat_file_task = PythonOperator(
+        task_id="create_claat_file",
+        python_callable=create_claat_file,
         provide_context=True,
+        op_args=["{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}", 
+                 "{{ ti.xcom_pull(task_ids='get_claat_codelab') }}"],
     )
 
-    # Task to execute the command
+
+    claat_command = """
+export LAB_ID="{LAB_ID}"
+claat export /home/ubuntu/QuLabs/documentation/$LAB_ID/documentation.md
+sudo mkdir /var/www/codelabs/$LAB_ID
+sudo cp -r /home/ubuntu/QuLabs/documentation/$LAB_ID/$LAB_ID/. /var/www/codelabs/$LAB_ID
+"""
+
+    build_claat_command = PythonOperator(
+        task_id="build_claat_command",
+        python_callable=build_command,
+        op_args=[claat_command, {
+            "LAB_ID": "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
+        }],
+        provide_context=True
+    )
+
     claat_command_step = BashOperator(
         task_id="claat_command",
         bash_command="{{ task_instance.xcom_pull(task_ids='build_claat_command') }}",
         do_xcom_push=True,
     )
-
-#     claat_command = """
-# export LAB_ID="{LAB_ID}"
-# mkdir -p /home/ubuntu/QuLabs/documentation/$LAB_ID
-# touch /home/ubuntu/QuLabs/documentation/$LAB_ID/documentation.md
-# echo "{CLAAT_DOCUMENTATION}" > /home/ubuntu/QuLabs/documentation/$LAB_ID/documentation.md
-# claat export /home/ubuntu/QuLabs/documentation/$LAB_ID/documentation.md
-# sudo mkdir /var/www/codelabs/$LAB_ID
-# sudo cp -r /home/ubuntu/QuLabs/documentation/$LAB_ID/$LAB_ID/. /var/www/codelabs/$LAB_ID
-# """
-
-#     build_claat_command = PythonOperator(
-#         task_id="build_claat_command",
-#         python_callable=build_command,
-#         op_args=[claat_command, {
-#             "LAB_ID": "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
-#             "CLAAT_DOCUMENTATION": "{{ ti.xcom_pull(task_ids='get_claat_codelab') }}"
-#         }],
-#         provide_context=True
-#     )
-
-#     claat_command_step = BashOperator(
-#         task_id="claat_command",
-#         bash_command="{{ task_instance.xcom_pull(task_ids='build_claat_command') }}",
-#         do_xcom_push=True,
-#     )
 
     end = PythonOperator(
         task_id="end",
@@ -807,6 +776,7 @@ echo "Updating Nginx snippet for lab: $LAB_ID on port $LAB_PORT"
     docker_compose_up >> \
     build_update_nginx_snippet_command >> \
     update_nginx_snippet >> \
+    create_claat_file_task >> \
     build_claat_command >> \
     claat_command_step >> \
     end
