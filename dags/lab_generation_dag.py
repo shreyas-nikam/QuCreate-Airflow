@@ -323,7 +323,7 @@ def get_readme_file(lab_id, streamlit_code, **kwargs):
     prompt = PromptHandler().get_prompt("README_FILE_PROMPT")
 
     # Format the prompt with the lab_id and Streamlit code
-    readme_prompt = prompt.format(LAB_ID=lab_id, STREAMLIT_APP=streamlit_code)
+    readme_prompt = prompt.format(STREAMLIT_APP=streamlit_code)
 
     # Log the formatted prompt for debugging
     logging.info("Updated prompt for README file:", readme_prompt)
