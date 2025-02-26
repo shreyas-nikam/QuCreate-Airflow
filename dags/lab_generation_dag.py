@@ -740,7 +740,7 @@ else
     rmdir $LAB_ID
     claat export documentation.md
 fi
-sudo mkdir /var/www/codelabs/$LAB_ID
+sudo mkdir -p /var/www/codelabs/$LAB_ID
 sudo cp -r /home/ubuntu/QuLabs/documentation/$LAB_ID/$LAB_ID/. /var/www/codelabs/$LAB_ID
 """
 
