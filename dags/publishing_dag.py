@@ -56,7 +56,7 @@ def add_notification_task(course_id, **kwargs):
     message = f"The course {course['course_name']}."
     for user in users:
         notifications_object = {
-            "username": user["username"],
+            "username": user,
             "creation_date": datetime.datetime.now(),
             "type": "course_module",
             "message": message,

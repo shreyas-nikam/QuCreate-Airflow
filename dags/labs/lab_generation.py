@@ -208,7 +208,7 @@ def final_task(lab_id, port, **kwargs):
     
     lab_url = f"https://qucreate.qusandbox.com/{lab_id}"
     repo_url = f"https://github.com/{GITHUB_USERNAME}/{lab_id}"
-    mongodb_client.update("lab_design", filter={"_id": ObjectId(lab_id)}, update={"$set": {"status": "Project Review", "lab_url": lab_url, "repo_url": repo_url}})
+    mongodb_client.update("lab_design", filter={"_id": ObjectId(lab_id)}, update={"$set": {"status": "Review", "lab_url": lab_url, "repo_url": repo_url}})
     
     # send notification to user
     send_notification(lab_id, port)
