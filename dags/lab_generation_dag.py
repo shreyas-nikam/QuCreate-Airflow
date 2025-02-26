@@ -720,7 +720,7 @@ echo "Updating Nginx snippet for lab: $LAB_ID on port $LAB_PORT"
     claat_command = """
 export LAB_ID="{LAB_ID}"
 mkdir -p /home/ubuntu/QuLabs/documentation/$LAB_ID
-nano /home/ubuntu/QuLabs/documentation/$LAB_ID/documentation.md
+touch /home/ubuntu/QuLabs/documentation/$LAB_ID/documentation.md
 cat <<EOF > /home/ubuntu/QuLabs/documentation/$LAB_ID/documentation.md
 {CLAAT_DOCUMENTATION}
 EOF
