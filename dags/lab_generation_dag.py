@@ -614,6 +614,7 @@ cd /home/ubuntu/QuLabs
 if [ ! -d "$LAB_ID" ]; then
     git clone https://github.com/{GITHUB_USERNAME}/{LAB_ID}.git
 else
+    cd $LAB_ID
     git pull origin main
 fi
 """
