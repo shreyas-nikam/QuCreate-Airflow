@@ -737,7 +737,7 @@ cd /home/ubuntu/QuLabs/documentation/$LAB_ID/
 if [ ! -d "$LAB_ID" ]; then
     claat export documentation.md
 else
-    rmdir $LAB_ID
+    rm -rf $LAB_ID
     claat export documentation.md
 fi
 sudo mkdir -p /var/www/codelabs/$LAB_ID
