@@ -246,7 +246,10 @@ def get_claat_codelab(lab_id, streamlit_code, **kwargs):
     ).text
 
     logging.info("Response from Gemini API:", response)
-
+    if "```markdown" in response:
+        response = response[response.index("```markdown")+12:response.rindex("```")]
+    if "```" in response:
+        response = response[response.index("```")+3:response.rindex("```")]
     response = "id: "+lab_id+"\n\n"+response.replace("---", "")
 
     return response
