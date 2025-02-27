@@ -115,6 +115,10 @@ def fetch_details_from_mongo_task(**kwargs):
     # Increment the port number by one for the new lab instance
     port += 1
     
+    # Update ports.txt with the latest port number
+    with open("ports.txt", "w") as f:
+        f.write(str(port))
+    
     # Create an instance of the custom MongoDB client to query the database
     mongodb_client = AtlasClient()
     # Query the 'in_lab_generation_queue' collection for the document with the specific entry_id
@@ -340,6 +344,12 @@ def get_readme_file(lab_id, streamlit_code, **kwargs):
         model=os.getenv("GEMINI_MODEL"),
         contents=readme_prompt,
     ).text
+    
+    
+    if "```markdown" in response:
+        response = response[response.index("```markdown")+12:response.rindex("```")]
+    if "```" in response:
+        response = response[response.index("```")+3:response.rindex("```")]
 
     # Log the response from Gemini API
     logging.info("Response from Gemini API:", response)
@@ -425,7 +435,7 @@ def send_notification(lab_id, port):
     users = lab.get("users", [])
     
     # Create and send notifications to all users
-    message = f"Your lab is ready for review."
+    message = f"Your lab {lab['lab_name']} is ready for review."
     for user in users:
         notifications_object = {
             "username": user,
@@ -446,9 +456,6 @@ def final_task(lab_id, port, **kwargs):
         port (int): Port number for the lab service
         **kwargs: Additional keyword arguments
     """
-    # Update ports.txt with the latest port number
-    with open("ports.txt", "w") as f:
-        f.write(str(port))
     
     # Update lab status and URLs in MongoDB
     mongodb_client = AtlasClient()
