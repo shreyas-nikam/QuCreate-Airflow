@@ -454,7 +454,7 @@ def final_task(lab_id, port, **kwargs):
     documentation_url = f"https://qucreate.qusandbox.com/documentation/{lab_id}/"
     mongodb_client.update("lab_design", 
                             filter={"_id": ObjectId(lab_id)}, 
-                            update={"$set": {"status": "Project Review", 
+                            update={"$set": {"status": "Review", 
                                         "lab_url": lab_url, 
                                         "repo_url": repo_url,
                                         "documentation_url": documentation_url}})
