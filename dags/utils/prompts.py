@@ -437,7 +437,7 @@ Ensure that the README file is comprehensive and provides clear instructions for
 # Output Format
 
 Enclose the generated README file within three backticks to ensure proper formatting as a text file:
-```
+```markdown
 ```
 
 {STREAMLIT_APP}
@@ -448,6 +448,11 @@ Follow the guidelines below to generate a codelab markdown for the attached stre
 Highlight the importance of the application, the concepts explained, etc in the first step so that the user gets proper context.
 The codelab should be comprehensive and cover all the functionalities of the application.
 
+Output format:
+Enclose the output in three backticks and markdown format.
+For Example:
+```markdown
+```
 
 Guidelines:
 Do not have any seperators like ---, *** etc in the codelab.
