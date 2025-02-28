@@ -244,10 +244,19 @@ def get_claat_codelab(lab_id, streamlit_code, **kwargs):
         model=os.getenv("GEMINI_MODEL"),
         contents=codelab_prompt,
     ).text
+    atlas_client = AtlasClient()
+    lab = atlas_client.find("lab_design", filter={"_id": ObjectId(lab_id)})[0]
 
     logging.info("Response from Gemini API:", response)
 
-    response = "id: "+lab_id+"\n\n"+response.replace("---", "")
+    headers = """id: {lab_id}
+summary: {lab_name}
+feedback link: https://docs.google.com/forms/d/e/1FAIpQLSfWkOK-in_bMMoHSZfcIvAeO58PAH9wrDqcxnJABHaxiDqhSA/viewform?usp=sf_link
+environments: Web
+status: Published
+"""
+    headers = headers.format(lab_id=lab_id, lab_name=lab["lab_name"])
+    response = headers + response.replace("---", "")
 
     return response
 
@@ -337,6 +346,9 @@ def get_readme_file(lab_id, streamlit_code, **kwargs):
         model=os.getenv("GEMINI_MODEL"),
         contents=readme_prompt,
     ).text
+
+    if "```markdown" in response:
+        response = response[response.index("```markdown")+11:response.rindex("```")]
 
     # Log the response from Gemini API
     logging.info("Response from Gemini API:", response)

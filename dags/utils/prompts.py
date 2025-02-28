@@ -437,7 +437,7 @@ Ensure that the README file is comprehensive and provides clear instructions for
 # Output Format
 
 Enclose the generated README file within three backticks to ensure proper formatting as a text file:
-```
+```markdown
 ```
 
 {STREAMLIT_APP}
