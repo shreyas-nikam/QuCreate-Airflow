@@ -115,6 +115,10 @@ def fetch_details_from_mongo_task(**kwargs):
     # Increment the port number by one for the new lab instance
     port += 1
     
+    # Update ports.txt with the latest port number
+    with open("ports.txt", "w") as f:
+        f.write(str(port))
+    
     # Create an instance of the custom MongoDB client to query the database
     mongodb_client = AtlasClient()
     # Query the 'in_lab_generation_queue' collection for the document with the specific entry_id
@@ -248,6 +252,9 @@ def get_claat_codelab(lab_id, streamlit_code, **kwargs):
     lab = atlas_client.find("lab_design", filter={"_id": ObjectId(lab_id)})[0]
 
     logging.info("Response from Gemini API:", response)
+    
+    if "```markdown" in response:
+        response = response[response.index("```markdown")+12:response.rindex("```")]
 
     headers = """id: {lab_id}
 summary: {lab_name}
@@ -346,6 +353,7 @@ def get_readme_file(lab_id, streamlit_code, **kwargs):
         model=os.getenv("GEMINI_MODEL"),
         contents=readme_prompt,
     ).text
+    
 
     if "```markdown" in response:
         response = response[response.index("```markdown")+11:response.rindex("```")]
@@ -434,7 +442,7 @@ def send_notification(lab_id, port):
     users = lab.get("users", [])
     
     # Create and send notifications to all users
-    message = f"Your lab is ready for review."
+    message = f"Your lab {lab['lab_name']} is ready for review."
     for user in users:
         notifications_object = {
             "username": user,
@@ -455,9 +463,6 @@ def final_task(lab_id, port, **kwargs):
         port (int): Port number for the lab service
         **kwargs: Additional keyword arguments
     """
-    # Update ports.txt with the latest port number
-    with open("ports.txt", "w") as f:
-        f.write(str(port))
     
     # Update lab status and URLs in MongoDB
     mongodb_client = AtlasClient()
@@ -466,7 +471,7 @@ def final_task(lab_id, port, **kwargs):
     documentation_url = f"https://qucreate.qusandbox.com/documentation/{lab_id}/"
     mongodb_client.update("lab_design", 
                             filter={"_id": ObjectId(lab_id)}, 
-                            update={"$set": {"status": "Project Review", 
+                            update={"$set": {"status": "Review", 
                                         "lab_url": lab_url, 
                                         "repo_url": repo_url,
                                         "documentation_url": documentation_url}})
