@@ -8,8 +8,13 @@ from utils.mongodb_client import AtlasClient
 from bson.objectid import ObjectId
 from airflow.utils.edgemodifier import Label
 from airflow.utils.trigger_rule import TriggerRule
-import datetime
+from datetime import datetime, timezone
 from course.structure_generation import _get_course_and_module
+import os
+import requests
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Steps:
 # 1. Get the course ID to be published.
@@ -57,13 +62,20 @@ def add_notification_task(course_id, **kwargs):
     for user in users:
         notifications_object = {
             "username": user,
-            "creation_date": datetime.datetime.now(),
-            "type": "course_module",
+            "creation_date": datetime.now(timezone.utc).isoformat(),
+            "type": "course",
             "message": message,
             "read": False,
-            "project_id": course_id
+            "project_id": course_id,
+            "module_id": ""
         }
         mongodb_client.insert("notifications", notifications_object)
+        
+        notifications_object["state"] = f"Done"
+        url = f"{os.getenv('FASTAPI_BACKEND_URL')}/task-complete"  # Adjust for your FastAPI host/port
+        response = requests.post(url, json=notifications_object)
+        response.raise_for_status()
+        
     return True
 
 
@@ -96,13 +108,19 @@ def failure_callback(context):
         for user in users:
             notification = {
                 "username": user,
-                "creation_date": datetime.datetime.now(),
+                "creation_date": datetime.now(timezone.utc).isoformat(),
                 "type": "course",
                 "message": message,
                 "read": False,
-                "project_id": course_id
+                "project_id": course_id,
+                "module_id": ""
             }
             mongodb_client.insert("notifications", notification)
+            
+            notification["state"] = f"Failed"
+            url = f"{os.getenv('FASTAPI_BACKEND_URL')}/task-complete"  # Adjust for your FastAPI host/port
+            response = requests.post(url, json=notification)
+            response.raise_for_status()
 
         # Delete the entry from MongoDB
         mongodb_client.delete("in_publishing_queue", filter={"_id": ObjectId(entry_id)})

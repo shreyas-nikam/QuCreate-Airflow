@@ -2,9 +2,10 @@
 import os
 import logging
 import base64
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import shutil
+import requests
 
 # Third-Party Imports
 from google import genai
@@ -446,13 +447,19 @@ def send_notification(lab_id, port):
     for user in users:
         notifications_object = {
             "username": user,
-            "creation_date": datetime.now(),
+            "creation_date": datetime.now(timezone.utc).isoformat(),
             "type": "lab",
             "message": message,
             "read": False,
-            "project_id": lab_id
+            "project_id": lab_id,
         }
         atlas_client.insert("notifications", notifications_object)
+        
+        notifications_object["state"] = f"Done"
+        url = f"{os.getenv('FASTAPI_BACKEND_URL')}/task-complete"  # Adjust for your FastAPI host/port
+        response = requests.post(url, json=notifications_object)
+        response.raise_for_status()
+
 
 def final_task(lab_id, port, **kwargs):
     """
@@ -528,13 +535,19 @@ def failure_callback(context):
         for user in users:
             notification = {
                 "username": user,
-                "creation_date": datetime.now(),
+                "creation_date": datetime.now(timezone.utc).isoformat(),
                 "type": "lab",
                 "message": message,
                 "read": False,
-                "project_id": lab_id
+                "project_id": lab_id,
+                "module_id": ""
             }
             mongodb_client.insert("notifications", notification)
+            
+            notification["state"] = f"Failed"
+            url = f"{os.getenv('FASTAPI_BACKEND_URL')}/task-complete"  # Adjust for your FastAPI host/port
+            response = requests.post(url, json=notification)
+            response.raise_for_status()
 
         # Remove failed entry from queue
         mongodb_client.delete("in_lab_generation_queue", filter={"_id": ObjectId(entry_id)})

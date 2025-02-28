@@ -1,4 +1,5 @@
-import datetime
+import os
+from datetime import datetime, timezone
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.utils.dates import days_ago
@@ -6,6 +7,10 @@ from course.structure_generation import process_structure_request
 import asyncio
 from airflow.operators.empty import EmptyOperator
 from course.structure_generation import _get_course_and_module, _get_resource_link, _extract_content, _generate_pptx, _add_transcript_to_pptx, _save_file_to_s3, _update_slide_entry
+import requests
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Steps:
 # 1. Fetch the entry from mongodb.
@@ -57,8 +62,8 @@ def failure_callback(context):
         users = course.get("users", [])
         for user in users:
             notification = {
-                "username": user,
-                "creation_date": datetime.datetime.now(),
+            "username": user,
+            "creation_date": datetime.now(timezone.utc).isoformat(),
                 "type": "course_module",
                 "message": message,
                 "read": False,
@@ -66,6 +71,11 @@ def failure_callback(context):
                 "project_id": course_id
             }
             mongodb_client.insert("notifications", notification)
+            
+            notification["state"] = f"Failed"
+            url = f"{os.getenv('FASTAPI_BACKEND_URL')}/task-complete"  # Adjust for your FastAPI host/port
+            response = requests.post(url, json=notification)
+            response.raise_for_status()
 
         # Delete the entry from MongoDB
         mongodb_client.delete("in_structure_generation_queue", filter={"_id": ObjectId(entry_id)})
@@ -141,7 +151,7 @@ def add_notification_step(entry_id, course_id, module_id, **kwargs):
     for user in users:
         notifications_object = {
             "username": user,
-            "creation_date": datetime.datetime.now(),
+            "creation_date": datetime.now(timezone.utc).isoformat(),
             "type": "course_module",
             "message": message,
             "read": False,
@@ -149,6 +159,11 @@ def add_notification_step(entry_id, course_id, module_id, **kwargs):
             "project_id": course_id
         }
         mongodb_client.insert("notifications", notifications_object)
+        
+        notifications_object["state"] = f"Done"
+        url = f"{os.getenv('FASTAPI_BACKEND_URL')}/task-complete"  # Adjust for your FastAPI host/port
+        response = requests.post(url, json=notifications_object)
+        response.raise_for_status()
 
     return True
 

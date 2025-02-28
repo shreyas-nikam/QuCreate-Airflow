@@ -1,4 +1,5 @@
-import datetime
+import os
+from datetime import datetime, timezone
 import ast
 from airflow import DAG
 from airflow.operators.python import PythonOperator
@@ -15,6 +16,11 @@ from bson.objectid import ObjectId
 from course.structure_generation import _get_course_and_module
 from pathlib import Path
 from airflow.utils.trigger_rule import TriggerRule
+from dotenv import load_dotenv
+import requests
+
+load_dotenv()
+
 # Steps:
 # 1. Get the course and module object from the course_id and module_id
 # 2. Get the slide from the pre_processed_content
@@ -126,7 +132,7 @@ def add_notification_step(entry_id, course_id, module_id, **kwargs):
     for user in users:
         notifications_object = {
             "username": user,
-            "creation_date": datetime.datetime.now(),
+            "creation_date": datetime.now(timezone.utc).isoformat(),
             "type": "course_module",
             "message": message,
             "read": False,
@@ -134,6 +140,11 @@ def add_notification_step(entry_id, course_id, module_id, **kwargs):
             "project_id": course_id
         }
         mongodb_client.insert("notifications", notifications_object)
+        
+        notifications_object["state"] = f"Done"
+        url = f"{os.getenv('FASTAPI_BACKEND_URL')}/task-complete"  # Adjust for your FastAPI host/port
+        response = requests.post(url, json=notifications_object)
+        response.raise_for_status()
 
 
     return True
@@ -173,8 +184,8 @@ def failure_callback(context):
         users = course.get("users", [])
         for user in users:
             notification = {
-                "username": user,
-                "creation_date": datetime.datetime.now(),
+            "username": user,
+            "creation_date": datetime.now(timezone.utc).isoformat(),
                 "type": "course_module",
                 "message": message,
                 "read": False,
@@ -182,7 +193,12 @@ def failure_callback(context):
                 "project_id": course_id
             }
             mongodb_client.insert("notifications", notification)
-
+            
+            notification["state"] = f"Failed"
+            url = f"{os.getenv('FASTAPI_BACKEND_URL')}/task-complete"  # Adjust for your FastAPI host/port
+            response = requests.post(url, json=notification)
+            response.raise_for_status()
+        
         # Delete the entry from MongoDB
         mongodb_client.delete("in_deliverables_generation_queue", filter={"_id": ObjectId(entry_id)})
         logging.info(f"Deleted entry {entry_id} from MongoDB after failure.")
