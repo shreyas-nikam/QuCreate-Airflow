@@ -313,8 +313,8 @@ def get_requirements_file(streamlit_code, **kwargs):
     logging.info("Response from Gemini API:", response)
 
     # Clean up the response by removing markdown code blocks if present
-    if "```" in response:
-        response = response[response.index("```")+3:response.rindex("```")]
+    if "```requirements" in response:
+        response = response[response.index("```requirements")+15:response.rindex("```")]
     return response
 
 def get_readme_file(lab_id, streamlit_code, **kwargs):
@@ -356,7 +356,7 @@ def get_readme_file(lab_id, streamlit_code, **kwargs):
     
 
     if "```markdown" in response:
-        response = response[response.index("```markdown")+11:response.rindex("```")]
+        response = response[response.index("```markdown")+12:response.rindex("```")]
 
     # Log the response from Gemini API
     logging.info("Response from Gemini API:", response)

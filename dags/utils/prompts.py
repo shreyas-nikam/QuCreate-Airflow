@@ -393,7 +393,7 @@ Return only the requirements file. This response will be used directly to genera
 # Output Format
 
 Output must be enclosed within three backticks to ensure proper formatting as a text file:
-```
+```requirements
 ```
 
 # Examples
@@ -448,6 +448,11 @@ Follow the guidelines below to generate a codelab markdown for the attached stre
 Highlight the importance of the application, the concepts explained, etc in the first step so that the user gets proper context.
 The codelab should be comprehensive and cover all the functionalities of the application.
 
+Output format:
+Enclose the output in three backticks and markdown format.
+For Example:
+```markdown
+```
 
 Guidelines:
 Do not have any seperators like ---, *** etc in the codelab.
