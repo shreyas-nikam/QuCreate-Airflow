@@ -75,7 +75,7 @@ def failure_callback(context):
             
             notification["state"] = f"Failed"
             url = f"{os.getenv('FASTAPI_BACKEND_URL')}/task-complete"  # Adjust for your FastAPI host/port
-            response = requests.post(_convert_object_ids_to_strings(url), json=notification)
+            response = requests.post(url, json=_convert_object_ids_to_strings(notification))
             response.raise_for_status()
 
         # Delete the entry from MongoDB
@@ -163,7 +163,7 @@ def add_notification_step(entry_id, course_id, module_id, **kwargs):
         
         notifications_object["state"] = f"Done"
         url = f"{os.getenv('FASTAPI_BACKEND_URL')}/task-complete"  # Adjust for your FastAPI host/port
-        response = requests.post(_convert_object_ids_to_strings(url), json=notifications_object)
+        response = requests.post(url, json=_convert_object_ids_to_strings(notifications_object))
         response.raise_for_status()
 
     return True
