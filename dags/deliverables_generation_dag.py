@@ -18,7 +18,7 @@ from pathlib import Path
 from airflow.utils.trigger_rule import TriggerRule
 from dotenv import load_dotenv
 import requests
-from dags.utils.converter import _convert_object_ids_to_strings
+from utils.converter import _convert_object_ids_to_strings
 
 load_dotenv()
 

@@ -9,7 +9,7 @@ from airflow.operators.empty import EmptyOperator
 from course.structure_generation import _get_course_and_module, _get_resource_link, _extract_content, _generate_pptx, _add_transcript_to_pptx, _save_file_to_s3, _update_slide_entry
 import requests
 from dotenv import load_dotenv
-from dags.utils.converter import _convert_object_ids_to_strings
+from utils.converter import _convert_object_ids_to_strings
 
 load_dotenv()
 

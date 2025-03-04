@@ -13,7 +13,7 @@ from course.structure_generation import _get_course_and_module
 import os
 import requests
 from dotenv import load_dotenv
-from dags.utils.converter import _convert_object_ids_to_strings
+from utils.converter import _convert_object_ids_to_strings
 
 load_dotenv()
 

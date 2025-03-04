@@ -25,7 +25,7 @@ from utils.prompt_handler import PromptHandler
 from utils.mongodb_client import AtlasClient
 from utils.s3_file_manager import S3FileManager
 from labs.github_helpers import upload_file_to_github, update_file_in_github
-from dags.utils.converter import _convert_object_ids_to_strings
+from utils.converter import _convert_object_ids_to_strings
 
 load_dotenv()
 GITHUB_USERNAME = os.getenv("GITHUB_USERNAME")
