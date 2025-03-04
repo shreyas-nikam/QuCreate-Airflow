@@ -453,6 +453,7 @@ def send_notification(lab_id, port):
             "message": message,
             "read": False,
             "project_id": lab_id,
+            "module_id": ""
         }
         atlas_client.insert("notifications", notifications_object)
         

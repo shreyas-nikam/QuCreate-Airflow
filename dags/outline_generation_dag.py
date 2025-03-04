@@ -144,11 +144,11 @@ def failure_callback(context):
             notification = {
             "username": user,
             "creation_date": datetime.now(timezone.utc).isoformat(),
-                "type": "course_module",
-                "message": message,
-                "read": False,
-                "module_id": module_id,
-                "project_id": course_id
+            "type": "course_module",
+            "message": message,
+            "read": False,
+            "module_id": module_id,
+            "project_id": course_id
             }
             mongodb_client.insert("notifications", notification)
             
