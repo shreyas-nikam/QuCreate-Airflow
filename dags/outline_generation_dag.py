@@ -14,6 +14,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 from course.structure_generation import _get_course_and_module
 from dotenv import load_dotenv
+from dags.utils.converter import _convert_object_ids_to_strings
 
 load_dotenv()
 
@@ -100,7 +101,7 @@ def add_notification_task(entry_id, course_id, module_id, **kwargs):
         
         notifications_object["state"] = f"Done"
         url = f"{os.getenv('FASTAPI_BACKEND_URL')}/task-complete"  # Adjust for your FastAPI host/port
-        response = requests.post(url, json=notifications_object)
+        response = requests.post(_convert_object_ids_to_strings(url), json=notifications_object)
         response.raise_for_status()
         
     return True
@@ -153,7 +154,7 @@ def failure_callback(context):
             
             notification["state"] = f"Failed"
             url = f"{os.getenv('FASTAPI_BACKEND_URL')}/task-complete"  # Adjust for your FastAPI host/port
-            response = requests.post(url, json=notification)
+            response = requests.post(_convert_object_ids_to_strings(url), json=notification)
             response.raise_for_status()
 
         # Delete the entry from MongoDB

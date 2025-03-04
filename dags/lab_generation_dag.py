@@ -25,6 +25,7 @@ from utils.prompt_handler import PromptHandler
 from utils.mongodb_client import AtlasClient
 from utils.s3_file_manager import S3FileManager
 from labs.github_helpers import upload_file_to_github, update_file_in_github
+from dags.utils.converter import _convert_object_ids_to_strings
 
 load_dotenv()
 GITHUB_USERNAME = os.getenv("GITHUB_USERNAME")
@@ -457,7 +458,7 @@ def send_notification(lab_id, port):
         
         notifications_object["state"] = f"Done"
         url = f"{os.getenv('FASTAPI_BACKEND_URL')}/task-complete"  # Adjust for your FastAPI host/port
-        response = requests.post(url, json=notifications_object)
+        response = requests.post(_convert_object_ids_to_strings(url), json=notifications_object)
         response.raise_for_status()
 
 
@@ -546,7 +547,7 @@ def failure_callback(context):
             
             notification["state"] = f"Failed"
             url = f"{os.getenv('FASTAPI_BACKEND_URL')}/task-complete"  # Adjust for your FastAPI host/port
-            response = requests.post(url, json=notification)
+            response = requests.post(_convert_object_ids_to_strings(url), json=notification)
             response.raise_for_status()
 
         # Remove failed entry from queue
