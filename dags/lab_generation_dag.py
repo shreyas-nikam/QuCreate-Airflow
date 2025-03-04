@@ -31,7 +31,7 @@ load_dotenv()
 GITHUB_USERNAME = os.getenv("GITHUB_USERNAME")
 
 
-docker_compose_file="""version: "3.8"
+docker_compose_file="""version: "3.12"
 
 services:
   {LAB_ID}_service:
@@ -47,7 +47,7 @@ services:
 """
 
 docker_file="""# Use Python base image
-FROM python:3.8-slim
+FROM python:3.12-slim
 
 # Set working directory in the container
 WORKDIR /app
@@ -699,7 +699,7 @@ sudo docker compose build
     docker_compose_up_command = """
 LAB_ID="{LAB_ID}"
 cd /home/ubuntu/QuLabs/$LAB_ID
-sudo docker compose up -d
+sudo docker compose up -d {LAB_ID}_service
 """
 
     build_docker_compose_up_command = PythonOperator(
