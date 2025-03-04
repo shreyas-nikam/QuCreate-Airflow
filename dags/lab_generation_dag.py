@@ -459,6 +459,7 @@ def send_notification(lab_id, port):
         
         notifications_object["state"] = f"Done"
         url = f"{os.getenv('FASTAPI_BACKEND_URL')}/task-complete"  # Adjust for your FastAPI host/port
+        print("Sending notification to", user, "on url", url)
         response = requests.post(url, json=_convert_object_ids_to_strings(notifications_object))
         response.raise_for_status()
 
