@@ -517,7 +517,8 @@ Info boxes are colored callouts that enclose special information in codelabs.
 Positive info boxes should contain positive information like best practices and
 time-saving tips. Negative infoboxes should contain information like warnings
 and API usage restriction. To create an infobox, put the type of infobox on a
-line by itself, then begin the next line with a colon.
+line by itself, then begin the next line with a colon. If you want to highlight 
+important information, use the <b> tag inside the aside tag.
 
 ```
 <aside class="positive">
