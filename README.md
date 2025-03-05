@@ -48,15 +48,6 @@ sudo apt install libreoffice
 6. Run airflow webserver (for development) (for deployment consider using pm2 `pm2 start "airflow webserver" --name webserver`)
 7. Run airflow scheduler (for development) (for deployment, consider using pm2 `pm2 start "airflow scheduler" --name scheduler`)
 8. Run `python mongodb_monitor` to run the sensor for detecting updates in the job queue. (for development) (for deployment consider using pm2 `pm2 start mongodb_monitor.py --interpreter /home/user1/QuCreate-Airflow/venv/bin/python --name monitor`)
-9. Copy the .pem file to the QuCreate-Airflow folder to connect to the ec2 instance for deploying labs.
-10. Install ssh provider `pip install apache-airflow-providers-ssh`
-11. Set up an ec2 connection
-    - Login to admin on airflow
-    - Go to Connections -> Add new connection
-    - Add the host (ec2-54-237-177-182.compute-1.amazonaws.com)
-    - Add the username (ubuntu)
-    - Add the Extras as `{"key_file": "path/to/pem/file.pem"}`
-    - Save the connection
 
 
 Yet to be implemented:
