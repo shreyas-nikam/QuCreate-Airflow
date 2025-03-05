@@ -284,7 +284,7 @@ def _create_certificate(course_id, course_name):
     return "https://qucoursify.s3.us-east-1.amazonaws.com/" + key
 
 
-async def generate_short_description(course):
+def generate_short_description(course):
     llm = LLM()
     prompt = "Generate a short description for the course. It should be only two lines long. Do not return anything else Here's the name and description of the course:\n\nCourse Name: {{course_name}}\n\nCourse Description: {{course_description}}"
     inputs = {
@@ -295,7 +295,7 @@ async def generate_short_description(course):
     prompt = PromptTemplate(template=prompt, inputs=inputs)
     return llm.get_response(prompt, inputs)
 
-async def generate_course_description(course):
+def generate_course_description(course):
     llm = LLM()
     prompt = "Generate a course description for the course. It should be in markdown format. Do not return anything else Here's the name and description of the course:\n\nCourse Name: {{course_name}}\n\nCourse Description: {{course_description}}"
     inputs = {
@@ -331,8 +331,8 @@ def handle_update_course(course_id):
         course["home_page_introduction"] = course_design["course_outline"]
 
         course = asyncio.run(_update_modules(course_id, course))
-        course["short_description"] = await generate_short_description(course)
-        course["home_page_introduction"] = await generate_course_description(course)
+        course["short_description"] = generate_short_description(course)
+        course["home_page_introduction"] = generate_course_description(course)
 
         mongo_client_test.update("courses", filter={"course_id": ObjectId(course_id)}, update={"$set": course})
 
@@ -377,8 +377,8 @@ def handle_create_course(course_id):
 
         logging.info("Updating modules")
         course = asyncio.run(_update_modules(course_id, course))
-        course["short_description"] = await generate_short_description(course)
-        course["home_page_introduction"] = await generate_course_description(course)
+        course["short_description"] = generate_short_description(course)
+        course["home_page_introduction"] = generate_course_description(course)
 
         mongo_client_test.insert("courses", course)
 
