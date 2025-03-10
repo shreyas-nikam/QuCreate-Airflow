@@ -80,6 +80,8 @@ enableCORS = false
 enableXsrfProtection = false
 """
 
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
 def fetch_details_from_mongo_task(**kwargs):
     """
     Fetch lab details from MongoDB and update the port configuration.
@@ -141,6 +143,9 @@ def fetch_details_from_mongo_task(**kwargs):
 
     # Log the fetched lab_id for debugging purposes
     logging.info(f"Found lab_id: {lab_id}")
+
+    global client
+    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
     
     # Return the lab_id and the incremented port number for further processing in the DAG
     return lab_id, port
@@ -195,8 +200,6 @@ def get_streamlit_code(lab_id, **kwargs):
     logging.info("Updated prompt for generating streamlit code:", streamlit_code_prompt)
     logging.info("================================================================")
 
-    # Initialize Gemini API client
-    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
     # List to store uploaded file references
     uploaded_files = []
@@ -245,7 +248,7 @@ def get_claat_codelab(lab_id, streamlit_code, **kwargs):
     logging.info("Updated prompt for generating codelab:", codelab_prompt)
     logging.info("================================================================")
 
-    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+    
     response = client.models.generate_content(
         model=os.getenv("GEMINI_MODEL"),
         contents=codelab_prompt,
@@ -303,8 +306,6 @@ def get_requirements_file(streamlit_code, **kwargs):
     logging.info("Updated Prompt for requirements file:", requirements_prompt)
     logging.info("================================================================")
 
-    # Initialize the Gemini AI client with API key
-    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
     # Generate requirements using Gemini AI model
     response = client.models.generate_content(
         model=os.getenv("GEMINI_MODEL"),
@@ -347,8 +348,6 @@ def get_readme_file(lab_id, streamlit_code, **kwargs):
     logging.info("Updated prompt for README file:", readme_prompt)
     logging.info("================================================================")
 
-    # Initialize Gemini AI client with API key
-    client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
     # Generate README content using Gemini AI
     response = client.models.generate_content(
