@@ -27,6 +27,8 @@ from utils.s3_file_manager import S3FileManager
 from labs.github_helpers import upload_file_to_github, update_file_in_github
 from utils.converter import _convert_object_ids_to_strings
 
+from smolagents import CodeAgent, LiteLLMModel, tool, VisitWebpageTool, MultiStepAgent
+
 load_dotenv()
 GITHUB_USERNAME = os.getenv("GITHUB_USERNAME")
 
@@ -81,6 +83,94 @@ enableXsrfProtection = false
 """
 
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+
+
+def generate_lab(lab_id, port, **kwargs):
+    atlas_client = AtlasClient()
+    lab = atlas_client.find("lab_design", filter={"_id": ObjectId(lab_id)})[0]
+    lab_params = atlas_client.find("in_lab_generation_queue", filter={"lab_id": lab_id})[0]
+    model_id = lab_params["model_id"]
+    model_key = lab_params["model_key"]
+    if model_id and model_key:
+        model = LiteLLMModel(model_id=model_id, api_key=model_key)
+    else:
+        model = LiteLLMModel(model_id=os.getenv("AGENT_MODEL"), api_key=os.getenv("AGENT_KEY"))
+
+    prompt = """
+Task:
+Create a Streamlit application for the lab "{LAB_NAME}" with the given technical specifications.
+
+Instructions:
+1. There should be an app.py file in the root directory of the repository compulsorily. 
+If possible, create multipage application for ease of maintainence and development. Have multiple pages for different functionalities.
+Incorporate explanations for code functionalities within the application interface. 
+Provide comprehensive explanations to users about visualizations, data, crucial steps, and formulas. 
+Ensure the application is interactive, allowing users to visualize real-time changes in input. 
+Include an array of graphs, images, charts, and other visualizations to enhance interactivity.
+
+2. Also add the readme file and requirements.txt file to the repository compulsorily.
+3. I have also provided the Dockerfile and docker-compose.yml file for the lab. Modify them to add any other instructions or installation steps, without changing the port number and lab id.
+4. Compulsorily add the (modified) dockerfile, docker-compose.yml, requirements.txt, app.py and README.md files to the repository.
+6. You can add any additional files or directories as needed.
+7. You can use the write_file_to_github tool to write the file to the repository. The tool requires complete code to be generated without any placeholders.
+
+
+Technical Specifications:
+```
+{TECH_SPEC}
+```
+
+Dockerfile:
+```
+{DOCKERFILE}
+```
+
+docker-compose.yml:
+```
+{DOCKER_COMPOSE}
+```
+"""
+    prompt = prompt.format(LAB_NAME=lab["lab_name"], TECH_SPEC=lab["technical_specifications"], DOCKERFILE=docker_file, DOCKER_COMPOSE=docker_compose_file.format(LAB_ID=lab_id, PORT=port))
+
+    code = ""
+    # create a tool to write file and filecontent to github
+    @tool
+    def write_file_to_github(file: str, filecontent: str) -> bool:
+        """
+        Write a file to a GitHub repository.
+
+        Args:
+            file: The file path.
+            filecontent: The content to write to the file.
+
+        Returns:
+            bool: True if the file is written successfully.
+        """
+
+        global code
+        code += f"""
+        {file}:
+        ```
+        {filecontent}
+        ```
+        """
+        
+        if upload_file_to_github(lab_id, file, filecontent, f"Add {file}"):
+            return True
+        else:
+            update_file_in_github(lab_id, file, filecontent, f"Update {file}")
+            return True
+        
+
+    tools = [write_file_to_github]
+
+    agent = CodeAgent(model=model, tools=tools, planning_interval=2)
+
+    agent.run(prompt)
+
+    return code
+   
+
 
 def fetch_details_from_mongo_task(**kwargs):
     """
@@ -590,11 +680,28 @@ with DAG(
         provide_context=True,
     )
 
-    get_streamlit_code_task = PythonOperator(
-        task_id="get_streamlit_code",
-        python_callable=get_streamlit_code,
+    # get_streamlit_code_task = PythonOperator(
+    #     task_id="get_streamlit_code",
+    #     python_callable=get_streamlit_code,
+    #     provide_context=True,
+    #     op_args=["{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}"],
+    # )
+
+  
+    
+    # get_requirements_file_task = PythonOperator(
+    #     task_id="get_requirements_file",
+    #     python_callable=get_requirements_file,
+    #     provide_context=True,
+    #     op_args=["{{ ti.xcom_pull(task_ids='get_streamlit_code') }}"],
+    # )
+
+    generate_lab_task = PythonOperator(
+        task_id="generate_lab",
+        python_callable=generate_lab,
         provide_context=True,
-        op_args=["{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}"],
+        op_args=["{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
+                "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}"],
     )
 
     get_claat_codelab_task = PythonOperator(
@@ -602,35 +709,28 @@ with DAG(
         python_callable=get_claat_codelab,
         provide_context=True,
         op_args=["{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
-                    "{{ ti.xcom_pull(task_ids='get_streamlit_code') }}"],
-    )
-    
-    get_requirements_file_task = PythonOperator(
-        task_id="get_requirements_file",
-        python_callable=get_requirements_file,
-        provide_context=True,
-        op_args=["{{ ti.xcom_pull(task_ids='get_streamlit_code') }}"],
+                "{{ ti.xcom_pull(task_ids='generate_lab') }}"]
     )
 
-    get_readme_file_task = PythonOperator(
-        task_id="get_readme_file",
-        python_callable=get_readme_file,
-        provide_context=True,
-        op_args=["{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}", 
-                 "{{ ti.xcom_pull(task_ids='get_streamlit_code') }}"],
-    )
+    # get_readme_file_task = PythonOperator(
+    #     task_id="get_readme_file",
+    #     python_callable=get_readme_file,
+    #     provide_context=True,
+    #     op_args=["{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}", 
+    #              "{{ ti.xcom_pull(task_ids='get_streamlit_code') }}"],
+    # )
 
-    upload_files_to_github_task = PythonOperator(
-        task_id="upload_files_to_github",
-        python_callable=upload_files_to_github,
-        provide_context=True,
-        op_args=["{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}", 
-                 "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}", 
-                 "{{ ti.xcom_pull(task_ids='get_streamlit_code') }}", 
-                 "{{ ti.xcom_pull(task_ids='get_requirements_file') }}",
-                 "{{ ti.xcom_pull(task_ids='get_readme_file') }}"
-                 ],
-    )
+    # upload_files_to_github_task = PythonOperator(
+    #     task_id="upload_files_to_github",
+    #     python_callable=upload_files_to_github,
+    #     provide_context=True,
+    #     op_args=["{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}", 
+    #              "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}", 
+    #              "{{ ti.xcom_pull(task_ids='get_streamlit_code') }}", 
+    #              "{{ ti.xcom_pull(task_ids='get_requirements_file') }}",
+    #              "{{ ti.xcom_pull(task_ids='get_readme_file') }}"
+    #              ],
+    # )
 
 
     pull_remote_command = """
@@ -738,9 +838,6 @@ echo "Updating Nginx snippet for lab: $LAB_ID on port $LAB_PORT"
     )
 
 
-    # 5) Update Nginx snippet
-    #    We assume lab_id uses a standard port assignment or we store the port in the DB too.
-    #    Example: all labs run on 8501 for single-lab approach, or you store a dynamic port in Mongo.
     update_nginx_snippet = BashOperator(
         task_id="update_nginx_snippet",
         bash_command="{{ task_instance.xcom_pull(task_ids='build_update_nginx_snippet_command') }}",
@@ -748,11 +845,11 @@ echo "Updating Nginx snippet for lab: $LAB_ID on port $LAB_PORT"
     )
 
     def create_claat_file(lab_id, claat_documentation, **kwargs):
-        file_path = f"/home/ubuntu/QuLabs/documentation/{lab_id}/documentation.md"
+        source_file_path = f"/home/ubuntu/QuLabs/{lab_id}/documentation/codelab.md"
+        destination_file_path = f"/home/ubuntu/QuLabs/documentation/{lab_id}/documentation.md"
         Path(f"/home/ubuntu/QuLabs/documentation/{lab_id}").mkdir(parents=True, exist_ok=True)
-        with open(file_path, "w") as f:
-            f.write(claat_documentation)
-        return file_path
+        shutil.copyfile(source_file_path, destination_file_path)
+        return destination_file_path
     
     create_claat_file_task = PythonOperator(
         task_id="create_claat_file",
@@ -801,11 +898,8 @@ sudo cp -r /home/ubuntu/QuLabs/documentation/$LAB_ID/$LAB_ID/. /var/www/codelabs
 
 
     fetch_details_from_mongo_step >> \
-    get_streamlit_code_task >> \
+    generate_lab_task >> \
     get_claat_codelab_task >> \
-    get_requirements_file_task >> \
-    get_readme_file_task >> \
-    upload_files_to_github_task >> \
     build_pull_repo_command >> \
     pull_repo_remote >> \
     build_docker_compose_command >> \
