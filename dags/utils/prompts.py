@@ -6,11 +6,14 @@ You are given the content for a module. You need to create {NUM_QUESTIONS} quest
 Each question object should have the following keys: "question", "options", "answer_option", and "explanation".
 All questions should have at least 4 options and the answer must be in one of the options.
 Do not return anything other than the output json.
+Have scenario-based questions. For the scenarios add the context to every question that is generated.
+Have 2-3 questions per scenario.
 
 Instructions:
 The questions must be comprehensive and not superficial.
 The explanations should be detailed.
 The questions should focus on the important points in each part.
+The quesstions should be scenario based.
 
 
 Sample Questions:
