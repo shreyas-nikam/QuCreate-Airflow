@@ -39,6 +39,7 @@ from textwrap import wrap
 import os
 from utils.s3_file_manager import S3FileManager
 from utils.retriever import Retriever
+from utils.llm import LLM
 course_object = {
     "app_name": "",
     "course_id": "",
@@ -283,6 +284,28 @@ def _create_certificate(course_id, course_name):
     return "https://qucoursify.s3.us-east-1.amazonaws.com/" + key
 
 
+def generate_short_description(course):
+    llm = LLM()
+    prompt = "Generate a short description for the course. It should be only two lines long. Do not return anything else Here's the name and description of the course:\n\nCourse Name: {{course_name}}\n\nCourse Description: {{course_description}}"
+    inputs = {
+        "course_name": course["app_name"],
+        "course_description": course["home_page_introduction"],
+        "modules": _convert_object_ids_to_strings(course["modules"])
+    }
+    prompt = PromptTemplate(template=prompt, inputs=inputs)
+    return llm.get_response(prompt, inputs)
+
+def generate_course_description(course):
+    llm = LLM()
+    prompt = "Generate a course description for the course. It should be in markdown format. Do not return anything else Here's the name and description of the course:\n\nCourse Name: {{course_name}}\n\nCourse Description: {{course_description}}"
+    inputs = {
+        "course_name": course["app_name"],
+        "course_description": course["home_page_introduction"],
+        "modules": _convert_object_ids_to_strings(course["modules"])
+    }
+    prompt = PromptTemplate(template=prompt, inputs=inputs)
+    return llm.get_response(prompt, inputs)
+
 def handle_update_course(course_id):
     """
     Steps:
@@ -305,10 +328,11 @@ def handle_update_course(course_id):
         
         course['app_name'] = course_design["course_name"]
         course["app_image_location"] = course_design["course_image"]
-        course["short_description"] = course_design["course_description"]
         course["home_page_introduction"] = course_design["course_outline"]
 
         course = asyncio.run(_update_modules(course_id, course))
+        course["short_description"] = generate_short_description(course)
+        course["home_page_introduction"] = generate_course_description(course)
 
         mongo_client_test.update("courses", filter={"course_id": ObjectId(course_id)}, update={"$set": course})
 
@@ -349,11 +373,12 @@ def handle_create_course(course_id):
 
         course['app_name'] = course_design["course_name"]
         course["app_image_location"] = course_design["course_image"]
-        course["short_description"] = course_design["course_description"]
         course["home_page_introduction"] = course_design["course_outline"]
 
         logging.info("Updating modules")
         course = asyncio.run(_update_modules(course_id, course))
+        course["short_description"] = generate_short_description(course)
+        course["home_page_introduction"] = generate_course_description(course)
 
         mongo_client_test.insert("courses", course)
 

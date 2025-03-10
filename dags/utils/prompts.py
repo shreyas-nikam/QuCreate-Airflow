@@ -516,15 +516,15 @@ hint to "console":
 Info boxes are colored callouts that enclose special information in codelabs.
 Positive info boxes should contain positive information like best practices and
 time-saving tips. Negative infoboxes should contain information like warnings
-and API usage restriction. 
+and API usage restriction. If you want to highlight important information, use the <b> tag inside the aside tag.
 
 ```
 <aside class="positive">
-This will appear in a positive info box.
+This will appear in a <b>positive</b> info box.
 </aside>
 
 <aside class="negative">
-This will appear in a negative info box.
+This will appear in a <b>negative</b> info box.
 </aside>
 ```
 
