@@ -240,6 +240,10 @@ Instructions:
 Based on the outline and the context provided, give me the contents for the a slide and the speaker notes for the corresponding slide.
 The slide should have slide header, slide content, and speaker notes.
 The slide should cover the minimum content that can be covered in a slide. Do not have too much content on a single slide.
+At least one slide should contain a mermaid diagram compulsorily.
+Use diagrams wherever possible.
+If there are diagrams or images on a slide, there should not be any other text on the slide.
+
 
 Slide Header Instructions:
 The headers should not be long and appropriate for the content on the slide.  

@@ -3,6 +3,8 @@
 ```bash
 sudo apt update
 sudo apt install libreoffice
+# Check if soffice is installed by running soffice --version
+npm install -g mermaid.cli
 ```
 
 - Install claat

@@ -3,16 +3,24 @@ Structure Consists of:
 1. Slide_Generated: Generated slide using the content from the previous step.
 2. Module Information: Markdown content for Module Information
 """
+# Standard library imports
 import ast
-import os
-from utils.s3_file_manager import S3FileManager
-from utils.mongodb_client import AtlasClient
-from bson.objectid import ObjectId
 import json
 import logging
+import os
+import re
+import subprocess
 from pathlib import Path
+
+# Third-party imports
+import pypandoc
+from bson.objectid import ObjectId
 from pptx import Presentation
 from pptx.util import Inches, Pt
+
+# Local imports
+from utils.mongodb_client import AtlasClient
+from utils.s3_file_manager import S3FileManager
 
 
 def _get_course_and_module(course_id, module_id):
@@ -64,26 +72,15 @@ def _extract_content(module_name, slide_content_key):
         response = s3_client.get_object(slide_content_key)
         slide_content = json.loads(response["Body"].read())
 
-        markdown = f"""template: Martin Template.pptx
-pageTitleSize: 30
-sectionTitleSize: 24
-baseTextSize: 28
-style.fgcolor.blue: 0000FF
-style.fgcolor.red: FF0000
-style.fgcolor.green: 00FF00
-
+        markdown = f"""
 # {module_name}
-
 """
         transcript = ["Hello welcome to the module on " + module_name]
 
         for slide in slide_content:
-            # replace the starting hyphen at the start of each line only with a  * for each line
-            slide_content = slide["slide_content"].replace("\n-", "\n*")
-            if slide_content.startswith("-"):
-                slide_content = "*" + slide_content[1:]
-            markdown += f"### {slide['slide_header']}\n\n{slide_content}\n\n"
+            markdown += f"\n# {slide['slide_header']}\n\n{slide_content}\n\n"
             transcript.append(slide["speaker_notes"])
+            markdown.append("\n---\n")
 
         return markdown, transcript
 
@@ -92,29 +89,42 @@ style.fgcolor.green: 00FF00
         return None, None
 
 
-def _generate_pptx(markdown, module_id):
+def _generate_pptx(markdown, module_id, template_doc="https://qucoursify.s3.us-east-1.amazonaws.com/qucoursify/qu-create-templates/templates/style-99.pptx"):
     """
-    Generate the pptx file using the markdown content
+    Generate the pptx file using the markdown content, converting Mermaid diagrams to PNGs first.
     """
     try:
-        # write the file in a temp location
-        with open(f"output/{module_id}/content.md", "w") as f:
+        output_dir = Path(f"output/{module_id}")
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        md_file_path = output_dir / "content.md"
+        output_ppt_path = output_dir / "structure.pptx"
+        reference_template = Path(f"dags/course/templates/{template_doc.split('/')[-1]}")
+
+        # Write markdown content to file
+        with open(md_file_path, "w") as f:
             f.write(markdown)
+        
+        # Convert Markdown to PPTX using Pandoc
+        pypandoc.convert_file(
+            md_file_path,
+            'pptx',
+            outputfile=output_ppt_path,
+            extra_args=[
+                '--reference-doc={}'.format(reference_template),
+            ]
+        )
 
-        md_file_path = Path(f"output/{module_id}/content.md")
-        output_ppt_path = Path(f"output/{module_id}/structure.pptx")
-
-        # Generate the pptx file
-        os.system(f'python md2pptx/md2pptx.py "{str(output_ppt_path.absolute())}" < "{str(md_file_path.absolute())}"')
-
-        # check if file is created
+        # Check if the PowerPoint file was created
         if not output_ppt_path.exists():
             raise Exception("Error in generating pptx")
-        return f"output/{module_id}/structure.pptx"
+
+        return str(output_ppt_path)
 
     except Exception as e:
         logging.error(f"Error in generating pptx: {e}")
         return None
+
 
 
 def _format_ppt(output_ppt_path,

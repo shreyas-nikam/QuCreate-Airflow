@@ -12,9 +12,6 @@ Steps:
 4. Upload the outline on the mongodb.
 """
 
-
-
-
 from utils.s3_file_manager import S3FileManager
 from utils.mongodb_client import AtlasClient
 import logging

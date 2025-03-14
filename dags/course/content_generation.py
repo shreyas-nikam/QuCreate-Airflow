@@ -38,8 +38,7 @@ def fetch_outline(course_id, module_id):
             return "Course not found"
 
         course = course[0]
-        module = next((m for m in course.get("modules", []) if m.get(
-            "module_id") == ObjectId(module_id)), None)
+        module = next((m for m in course.get("modules", []) if m.get("module_id") == ObjectId(module_id)), None)
         if not module:
             return "Module not found"
 
@@ -51,8 +50,7 @@ def fetch_outline(course_id, module_id):
         if Path(download_path).exists():
             os.remove(download_path)
 
-        Path(download_path[:download_path.rindex("/")]
-             ).mkdir(parents=True, exist_ok=True)
+        Path(download_path[:download_path.rindex("/")]).mkdir(parents=True, exist_ok=True)
         outline_key = outline_link.split("amazonaws.com/")[1]
         s3_file_manager.download_file(outline_key, download_path)
 
@@ -64,6 +62,7 @@ def fetch_outline(course_id, module_id):
 
     except Exception as e:
         logging.error(f"Error in fetching outline: {e}")
+
 
 
 def _get_course_and_module(course_id, module_id):

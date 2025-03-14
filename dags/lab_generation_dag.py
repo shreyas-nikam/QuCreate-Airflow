@@ -89,10 +89,12 @@ def generate_lab(lab_id, port, **kwargs):
     atlas_client = AtlasClient()
     lab = atlas_client.find("lab_design", filter={"_id": ObjectId(lab_id)})[0]
     lab_params = atlas_client.find("in_lab_generation_queue", filter={"lab_id": lab_id})[0]
-    model_id = lab_params["model_id"]
-    model_key = lab_params["model_key"]
-    if model_id and model_key:
-        model = LiteLLMModel(model_id=model_id, api_key=model_key)
+    model = None
+    if "model_id" in lab_params and "api_key" in lab_params:
+        model_id = lab_params["model_id"]
+        api_key = lab_params["api_key"]
+        if model_id and api_key:
+            model = LiteLLMModel(model_id=model_id, api_key=api_key)
     else:
         model = LiteLLMModel(model_id=os.getenv("AGENT_MODEL"), api_key=os.getenv("AGENT_KEY"))
 
@@ -101,18 +103,37 @@ Task:
 Create a Streamlit application for the lab "{LAB_NAME}" with the given technical specifications.
 
 Instructions:
-1. There should be an app.py file in the root directory of the repository compulsorily. 
-If possible, create multipage application for ease of maintainence and development. Have multiple pages for different functionalities.
-Incorporate explanations for code functionalities within the application interface. 
-Provide comprehensive explanations to users about visualizations, data, crucial steps, and formulas. 
-Ensure the application is interactive, allowing users to visualize real-time changes in input. 
-Include an array of graphs, images, charts, and other visualizations to enhance interactivity.
+1. There SHOULD be an app.py file in the root directory of the repository. 
+Create a multi-page application for ease of maintainence and development. 
+Compulsorily have multiple pages in multiple files for different functionalities. You can have as many files/directories as you need.
+1.1. The main app.py for the streamlit application should enclose the code in the following codeblock:
+```python
 
-2. Also add the readme file and requirements.txt file to the repository compulsorily.
-3. I have also provided the Dockerfile and docker-compose.yml file for the lab. Modify them to add any other instructions or installation steps, without changing the port number and lab id.
-4. Compulsorily add the (modified) dockerfile, docker-compose.yml, requirements.txt, app.py and README.md files to the repository.
-6. You can add any additional files or directories as needed.
-7. You can use the write_file_to_github tool to write the file to the repository. The tool requires complete code to be generated without any placeholders.
+import streamlit as st
+
+st.set_page_config(page_title="QuCreate Streamlit Lab", layout="wide")
+st.sidebar.image("https://www.quantuniversity.com/assets/img/logo5.jpg")
+st.sidebar.divider()
+st.title("QuLab")
+st.divider()
+
+# Code goes here
+
+st.divider()
+st.write("© 2025 QuantUniversity. All Rights Reserved.")
+st.caption("The purpose of this demonstration is solely for educational use and illustration. "
+           "To access the full legal documentation, please visit this link. Any reproduction of this demonstration "
+           "requires prior written consent from QuantUniversity.")
+```
+
+2. Provide comprehensive explanations to users through markdown about visualizations, data, crucial steps, and formulas. 
+Ensure the application is interactive, allowing users to visualize real-time changes in input. 
+Include an array of graphs, images, charts, and other visualizations to enhance interactivity. (Use plotly instead of matplotlib for visualizations)
+
+
+3. Also add the readme file and requirements.txt file to the repository compulsorily. I have also provided the Dockerfile and docker-compose.yml file for the lab. Only modify installation instructions in them if extra installations (os-level/others) are required other than requirements.txt.
+4. Compulsorily add the (modified) dockerfile, docker-compose.yml, requirements.txt, app.py and README.md (and other generated files) files to the repository using the write_file_to_github tool. The tool requires complete working code.
+5. Validate the generated code before writing it to github for red flags (e.g. destructive commands, suspicious imports, sensitive information, etc.) and write them in markdown on the frontend.
 
 
 Technical Specifications:
@@ -135,7 +156,7 @@ docker-compose.yml:
     code = ""
     # create a tool to write file and filecontent to github
     @tool
-    def write_file_to_github(file: str, filecontent: str) -> bool:
+    def write_file_to_github(file: str = "blank.txt", filecontent: str = "") -> bool:
         """
         Write a file to a GitHub repository.
 
@@ -146,14 +167,15 @@ docker-compose.yml:
         Returns:
             bool: True if the file is written successfully.
         """
+        nonlocal code
 
-        global code
-        code += f"""
-        {file}:
-        ```
-        {filecontent}
-        ```
-        """
+        if file not in ["requirements.txt", "README.md", "Dockerfile", "docker-compose.yml"]:
+            code += f"""
+            {file}:
+            ```
+            {filecontent}
+            ```
+            """
         
         if upload_file_to_github(lab_id, file, filecontent, f"Add {file}"):
             return True
@@ -164,7 +186,8 @@ docker-compose.yml:
 
     tools = [write_file_to_github]
 
-    agent = CodeAgent(model=model, tools=tools, planning_interval=2)
+    # executor type to be added
+    agent = CodeAgent(model=model, tools=tools, planning_interval=2, executor_type='e2b')
 
     agent.run(prompt)
 
@@ -899,16 +922,16 @@ sudo cp -r /home/ubuntu/QuLabs/documentation/$LAB_ID/$LAB_ID/. /var/www/codelabs
 
     fetch_details_from_mongo_step >> \
     generate_lab_task >> \
-    get_claat_codelab_task >> \
-    build_pull_repo_command >> \
-    pull_repo_remote >> \
-    build_docker_compose_command >> \
-    docker_compose_build >> \
-    build_docker_compose_up_command >> \
-    docker_compose_up >> \
-    build_update_nginx_snippet_command >> \
-    update_nginx_snippet >> \
-    create_claat_file_task >> \
-    build_claat_command >> \
-    claat_command_step >> \
-    end
+    get_claat_codelab_task
+    # build_pull_repo_command >> \
+    # pull_repo_remote >> \
+    # build_docker_compose_command >> \
+    # docker_compose_build >> \
+    # build_docker_compose_up_command >> \
+    # docker_compose_up >> \
+    # build_update_nginx_snippet_command >> \
+    # update_nginx_snippet >> \
+    # create_claat_file_task >> \
+    # build_claat_command >> \
+    # claat_command_step >> \
+    # end

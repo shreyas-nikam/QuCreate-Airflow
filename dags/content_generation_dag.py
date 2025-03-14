@@ -66,20 +66,53 @@ def generate_module_information_step(module_id, slides, **kwargs):
     return module_information
 
 
+import subprocess
+import re
+
+def _convert_mermaid_to_png(markdown, output_dir):
+    """
+    Convert Mermaid code blocks in Markdown to PNGs and replace them with image links.
+    """
+    mermaid_pattern = re.compile(r"```mermaid\n(.*?)\n```", re.DOTALL)
+    matches = mermaid_pattern.findall(markdown)
+
+    for i, mermaid_code in enumerate(matches):
+        input_path = output_dir / f"diagram_{i}.mmd"
+        output_path = output_dir / f"diagram_{i}.png"
+
+        # Save Mermaid diagram to a file
+        with open(input_path, "w") as f:
+            f.write(mermaid_code)
+
+        # Run Mermaid CLI to convert to PNG
+        cmd = f"npx -p @mermaid-js/mermaid-cli mmdc -i {input_path} -o {output_path} --outputFormat=png"
+        try:
+            subprocess.run(cmd, shell=True, check=True)
+            logging.info(f"Generated Mermaid diagram: {output_path}")
+
+            # Replace Mermaid block with an image reference in Markdown
+            markdown = markdown.replace(f"```mermaid\n{mermaid_code}\n```", f"![Mermaid Diagram]({output_path})")
+        except subprocess.CalledProcessError as e:
+            logging.error(f"Error converting Mermaid diagram: {e}")
+
+    return markdown
+
+
 def write_content_to_file_step(module_id, slides, module_information, **kwargs):
     logging.info(f"Writing content to file for module: {module_id}")
     slide_output_path = f"output/{module_id}/slide_content/slide_content.json"
     module_information_output_path = f"output/{module_id}/module_information/module_information.md"
     python_data = ast.literal_eval(slides)
     json_data = json.dumps(python_data, indent=4)
-    Path(slide_output_path[:slide_output_path.rindex("/")]
-         ).mkdir(parents=True, exist_ok=True)
+    
+    Path(slide_output_path[:slide_output_path.rindex("/")]).mkdir(parents=True, exist_ok=True)
     with open(slide_output_path, "w") as slide_file:
         json.dump(python_data, slide_file, indent=4)
-    Path(module_information_output_path[:module_information_output_path.rindex(
-        "/")]).mkdir(parents=True, exist_ok=True)
+    
+    Path(module_information_output_path[:module_information_output_path.rindex("/")]).mkdir(parents=True, exist_ok=True)
     with open(module_information_output_path, "w") as module_information_file:
         module_information_file.write(module_information)
+    
     logging.info(f"Content written to file for module: {module_id}")
     return slide_output_path, module_information_output_path
 

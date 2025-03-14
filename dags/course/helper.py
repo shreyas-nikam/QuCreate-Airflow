@@ -1,50 +1,44 @@
-from utils.mongodb_client import AtlasClient
-from utils.llm import LLM
-import json
+# Standard library imports 
 import asyncio
+import json
+import logging
+import os
+import re
+import subprocess
+import pickle
+import re
+import time
+from operator import itemgetter
+from pathlib import Path
 from typing import Any, List
+
+# Third-party imports
+from dotenv import load_dotenv
+import nest_asyncio
+from llama_parse import LlamaParse
+from pydantic import BaseModel, Field
+
+# Llama index imports
+import llama_index.core
+from llama_index.core import Settings, StorageContext, SummaryIndex, VectorStoreIndex, load_index_from_storage
 from llama_index.core.llms.function_calling import FunctionCallingLLM
 from llama_index.core.llms.structured_llm import StructuredLLM
 from llama_index.core.memory import ChatMemoryBuffer
 from llama_index.core.llms import ChatMessage
-from llama_index.core.tools.types import BaseTool
-from llama_index.core.tools import ToolSelection
-from llama_index.core.workflow import Workflow, StartEvent, StopEvent, Context, step
 from llama_index.core.query_engine import RetrieverQueryEngine
 from llama_index.core.response_synthesizers import CompactAndRefine
-from llama_index.core.workflow import Event
-from operator import itemgetter
-from llama_index.core.tools import FunctionTool
-from llama_index.core.schema import NodeWithScore
-import pickle
-import logging
-import nest_asyncio
-import llama_index.core
-import os
-from llama_index.core import Settings
-from llama_index.llms.openai import OpenAI
+from llama_index.core.schema import NodeWithScore, TextNode
+from llama_index.core.tools import BaseTool, FunctionTool, ToolSelection
+from llama_index.core.workflow import Context, Event, StartEvent, StopEvent, Workflow, step
 from llama_index.embeddings.openai import OpenAIEmbedding
-from llama_parse import LlamaParse
-from dotenv import load_dotenv
-from llama_index.core.schema import TextNode
-import re
-from pathlib import Path
-from llama_index.core import (
-    StorageContext,
-    SummaryIndex,
-    VectorStoreIndex,
-    load_index_from_storage,
-)
 from llama_index.llms.openai import OpenAI
-from utils.prompt_handler import PromptHandler
-from pydantic import BaseModel, Field
 
-"""
-One function will be to parse and store the indexes.
-One function will be to fetch the index.
-One function will be to generate the outline.
-One function will be to generate the slides.
-"""
+# Local imports
+from utils.llm import LLM
+from utils.mongodb_client import AtlasClient
+from utils.prompt_handler import PromptHandler
+from utils.s3_file_manager import S3FileManager
+
 
 load_dotenv()
 nest_asyncio.apply()
@@ -130,19 +124,36 @@ def parse_files(module_id, file_path, download_path):
 
     file_dicts = {}
 
+    s3 = S3FileManager()
+
     for file_path in file_paths:
         file_base = Path(file_path).stem
         full_file_path = file_path
-        md_json_objs = parser.get_json_result(file_path)
-        print(md_json_objs)
+        md_json_objs = []
+        while not md_json_objs:
+            md_json_objs = parser.get_json_result(file_path)
+            time.sleep(5)
+
+        print("MD Json Objects", md_json_objs)
         json_dicts = md_json_objs[0]["pages"]
 
-        image_path = str(Path(download_path) / file_base)
+        image_path_ = str(Path(download_path) / file_base)
         image_dicts = parser.get_images(md_json_objs, download_path=image_path)
+        print("Image dicts", image_dicts)
+
+        # store all the images in s3
+        for index, image_dict in enumerate(image_dicts):
+            image_path = image_dict["image_path"]
+            image = image_dict["image"]
+            key = f"{module_id}/{image_path}"
+            s3.upload_fileobj(image, key)
+            link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+key
+            image_dicts[index]["image_path"] = link
+
         file_dicts[file_path] = {
             "file_path": full_file_path,
             "json_dicts": json_dicts,
-            "image_path": image_path,
+            "image_path": image_path_,
         }
 
     all_text_nodes = []
@@ -191,7 +202,6 @@ def load_indexes(module_id):
         storage_context, index_id=f"{module_id}_vector_index")
 
     return vector_index, summary_indexes
-
 
 # function tools
 def chunk_retriever_fn(query: str, vector_index) -> List[NodeWithScore]:
@@ -304,15 +314,12 @@ class ModuleInformationOutput(BaseModel):
 prompt_handler = PromptHandler()
 outline_system_prompt = prompt_handler.get_prompt("GET_OUTLINE_PROMPT")
 slide_system_prompt = prompt_handler.get_prompt("GET_SLIDE_PROMPT")
-module_information_system_prompt = prompt_handler.get_prompt(
-    "CONTENT_TO_SUMMARY_PROMPT")
+module_information_system_prompt = prompt_handler.get_prompt("CONTENT_TO_SUMMARY_PROMPT")
 
-outline_gen_llm = OpenAI(model=os.getenv(
-    "OPENAI_MODEL"), system_prompt=outline_system_prompt, api_key=OPENAI_KEY)
+outline_gen_llm = OpenAI(model=os.getenv("OPENAI_MODEL"), system_prompt=outline_system_prompt, api_key=OPENAI_KEY)
 slide_gen_llm = OpenAI(model=os.getenv("OPENAI_MODEL"),
                        system_prompt=slide_system_prompt, api_key=OPENAI_KEY)
-module_information_gen_llm = OpenAI(model=os.getenv(
-    "OPENAI_MODEL"), system_prompt=module_information_system_prompt, api_key=OPENAI_KEY)
+module_information_gen_llm = OpenAI(model=os.getenv("OPENAI_MODEL"), system_prompt=module_information_system_prompt, api_key=OPENAI_KEY)
 
 outline_gen_sllm = llm.as_structured_llm(output_cls=OutlineOutput)
 slide_gen_sllm = llm.as_structured_llm(output_cls=SlideOutput)
@@ -467,7 +474,7 @@ async def generate_outline(module_id, instructions):
     vector_index, summary_indexes = load_indexes(module_id)
     logging.info("Index loaded")
 
-    query_engine = vector_index.as_query_engine(
+    query_engine = summary_indexes.as_query_engine(
         similarity_top_k=5,
         llm=outline_gen_llm,
     )
@@ -480,6 +487,55 @@ async def generate_outline(module_id, instructions):
     logging.info("Response for agent's output: "+response)
 
     return response
+
+
+def convert_images_to_links(markdown, module_id):
+    """
+    Convert Mermaid code blocks in Markdown to PNGs and replace them with image links.
+    """
+    logging.info("Converting Mermaid code blocks to PNGs")
+
+    markdown_file = open(f"output/{module_id}", "w")
+    markdown_file.write(markdown)
+    markdown_file.close()
+
+    logging.info(f"Running command: npx -p @mermaid-js/mermaid-cli mmdc -i {markdown_file} -o {markdown_file} --outputFormat=png")
+    command = f"npx -p @mermaid-js/mermaid-cli mmdc -i {markdown_file} -o {markdown_file} --outputFormat=png"
+
+    subprocess.run(command, shell=True)
+
+    # push all the generated image files in the file_path to s3, and replace the files to s3 links
+    markdown_file = open(f"output/{module_id}", "r")
+    markdown_content = markdown_file.read()
+    markdown_file.close()
+
+    logging.info("Original File")
+    logging.info(markdown_content)
+
+    s3 = S3FileManager()
+
+    rewritten_markdown_content = []
+    # if line startswith ![diagram](./output-svg, replace it with ![diagram](s3 link)
+    for line in markdown_content:
+        if line.startswith("![diagram](./output-svg"):
+            file_path = line.split("(")[1].split(")")[0]
+            logging.info("File path (mermaid): "+file_path)
+            key = "qucoursify/qu-course-design/"+module_id+"/slides/"+file_path
+            s3.upload_file(file_path, key)
+            link = "https://qucoursify.s3.us-east-1.amazonaws.com/qu-course-design/"+"/"+module_id+"/slides/"+file_path
+            rewritten_markdown_content.append(f"![diagram]({link})")
+        elif line.startswith("!["):
+            file_path = module_id+"/"+line.split("(")[1].split(")")[0]
+            logging.info("File path (image): "+file_path)
+            key = "qucoursify/qu-course-design/"+module_id+"/slides/"+file_path
+            s3.upload_file(file_path, key)
+            link = "https://qucoursify.s3.us-east-1.amazonaws.com/qu-course-design/"+"/"+module_id+"/slides/"+file_path
+            rewritten_markdown_content.append(f"![diagram]({link})")
+        else:
+            rewritten_markdown_content.append(line)
+
+
+    return "\n".join(rewritten_markdown_content)
 
 
 def _break_outline(outline):
@@ -521,10 +577,12 @@ async def get_slides(module_id, outline):
     for section in sections:
         logging.info("Section: "+section)
         response = await agent.run(input="Help me get the slide header, slide content and the speaker notes for ONE SLIDE for the following topic after retrieving relevant information to the following topic from the tools. The slide header should be short and descriptive. The slide content should be descriptive and have 3-5 bullet points. The speaker notes should be as if presenting the topic on teh slides based on the slide content and should be in a continuous flow.\n"+section)
+        slide_content = response['response'].response.slide_content
+        slide_content = convert_images_to_links(slide_content, module_id)
 
         slides.append({
             "slide_header": response['response'].response.slide_header,
-            "slide_content": response['response'].response.slide_content,
+            "slide_content": slide_content,
             "speaker_notes": response['response'].response.speaker_notes
         })
 
