@@ -32,6 +32,8 @@ import asyncio
 from pathlib import Path
 import json
 from PIL import Image, ImageDraw, ImageFont
+from langchain.prompts.prompt import PromptTemplate
+from utils.converter import _convert_object_ids_to_strings
 from utils.mongodb_client import AtlasClient
 from bson import ObjectId
 import logging
@@ -40,6 +42,7 @@ import os
 from utils.s3_file_manager import S3FileManager
 from utils.retriever import Retriever
 from utils.llm import LLM
+
 course_object = {
     "app_name": "",
     "course_id": "",
@@ -84,132 +87,194 @@ async def _convert_to_pdf(course_id, module_id, slide_link):
 
     return f"https://qucoursify.s3.us-east-1.amazonaws.com/{pdf_key}"
 
+async def _process_resource(course_id, module_id, resource, s3_file_manager):
+    """
+    Process a single resource from a module and return its processed data
+    
+    Args:
+        course_id (str): The ID of the course
+        module_id (str): The ID of the module
+        resource (dict): Resource object containing type and link
+        s3_file_manager (S3FileManager): S3 file manager instance
+    
+    Returns:
+        tuple: Processed data based on resource type
+    """
+    resource_type = resource['resource_type']
+    resource_link = resource['resource_link']
+
+    if resource_type == "Slide_Generated":
+        return await _convert_to_pdf(course_id, module_id, resource_link), None
+    
+    elif resource_type == "Video":
+        return resource_link, None
+    
+    elif resource_type == "Note":
+        notes_key = resource_link.split("amazonaws.com/")[1]
+        notes_obj = s3_file_manager.get_object(notes_key)
+        return notes_obj["Body"].read().decode("utf-8"), None
+    
+    elif resource_type == "Assessment":
+        assessment_key = resource_link.split("amazonaws.com/")[1]
+        assessment_obj = s3_file_manager.get_object(assessment_key)
+        assessment = json.loads(assessment_obj["Body"].read().decode("utf-8"))
+        return None, assessment
+    
+    elif resource_type == "Chatbot" and resource_link:
+        chatbot_key = resource_link.split("amazonaws.com/")[1]
+        chatbot_obj = s3_file_manager.get_object(chatbot_key)
+        return chatbot_obj["Body"].read().decode("utf-8"), None
+    
+    return None, None
+
+async def _setup_chatbot(course_id, chatbot_text, s3_file_manager):
+    """
+    Set up chatbot by creating and uploading vector store
+    
+    Args:
+        course_id (str): The ID of the course
+        chatbot_text (str): Text content for chatbot
+        s3_file_manager (S3FileManager): S3 file manager instance
+    
+    Returns:
+        str: Chatbot link
+    """
+    retriever = Retriever()
+    output_path = f"output/{course_id}/retriever"
+    Path(output_path).mkdir(parents=True, exist_ok=True)
+    retriever.create_vector_store(chatbot_text, output_path)
+
+    files = [
+        "bm25_retriever.pkl",
+        "faiss_retriever.pkl",
+        "hybrid_db/index.pkl",
+        "hybrid_db/index.faiss"
+    ]
+    
+    for file in files:
+        local_path = f"{output_path}/{file}"
+        s3_key = f"qu-course-design/{course_id}/retriever/{file}"
+        await s3_file_manager.upload_file(local_path, s3_key)
+    
+    return f"https://qucoursify.s3.us-east-1.amazonaws.com/qu-course-design/{course_id}/retriever"
+
+async def _setup_quiz(course_id, questions):
+    """
+    Set up quiz by creating and uploading questions file
+    
+    Args:
+        course_id (str): The ID of the course
+        questions (dict): Quiz questions
+    
+    Returns:
+        str: Questions file URL
+    """
+    quiz_path = f"output/{course_id}/quiz"
+    Path(quiz_path).mkdir(parents=True, exist_ok=True)
+    quiz_file_path = f"{quiz_path}/quiz.json"
+    
+    with open(quiz_file_path, "w") as quiz_file:
+        json.dump(questions, quiz_file)
+    
+    key = f"qu-course-design/{course_id}/quiz.json"
+    s3_client = S3FileManager()
+    await s3_client.upload_file(quiz_file_path, key)
+    return f"https://qucoursify.s3.us-east-1.amazonaws.com/{key}"
 
 async def _update_modules(course_id, course):
+    """
+    Update course modules with processed resources and create necessary artifacts
+    
+    Args:
+        course_id (str): The ID of the course
+        course (dict): Course object to be updated
+    
+    Returns:
+        dict: Updated course object
+    """
     logging.info(f"Updating modules for course: {course_id}")
     
     course_design = mongo_client_env.find("course_design", filter={"_id": ObjectId(course_id)})[0]
     module_objs = mongo_client_env.find("post_processed_deliverables", filter={"course_id": course_id})
-    print(module_objs)
-    if len(module_objs) == 0:
+    
+    if not module_objs:
         raise Exception("No modules found for the course")
 
     module_ids = set([module["module_id"] for module in module_objs])
-    print(module_ids)
+    modules = [module for module in course_design['modules'] if str(module['module_id']) in module_ids]
 
-    modules = []
-    for module in course_design['modules']:
-        if str(module['module_id']) in module_ids:
-            modules.append(module)
-
-    print(modules)
-
-    if len(modules) == 0:
+    if not modules:
         raise Exception("No modules found for the course")
 
-    slide_links = []
-    slide_names = []
-    video_links = []
-    module_ids = []
+    slide_links, slide_names, video_links = [], [], []
+    module_ids, course_module_information = [], []
     questions = {}
-    course_module_information = []
-    s3_file_manager = S3FileManager()
     chatbot_text_complete = ""
+    s3_file_manager = S3FileManager()
+    atlas_client = AtlasClient()
 
+    # Process each module
     for module in modules:
-        logging.info(f"Updating module: {module['module_id']}")
         module_id = module["module_id"]
         module_ids.append(module_id)
-
         slide_names.append(module["module_name"])
         module['status'] = "Published"
+
         for resource in module['pre_processed_deliverables']:
-            if resource['resource_type'] == "Slide_Generated":
-                slide_link = resource['resource_link']
-                slide_link = await _convert_to_pdf(course_id, module_id, slide_link)
-                slide_links.append(slide_link)
-                logging.info(f"Slide link updated: {slide_link}")
-            elif resource['resource_type'] == "Video":
-                video_link = resource['resource_link']
-                video_links.append(video_link)
-                logging.info(f"Video link updated: {video_link}")
-            elif resource['resource_type'] == "Note":
-                logging.info("Updating notes")
-                notes_link = resource['resource_link']
-                logging.info(f"Notes link: {notes_link}")
-                notes_key = notes_link.split("amazonaws.com/")[1]
-                logging.info(f"Notes key: {notes_key}")
-                notes_obj = s3_file_manager.get_object(notes_key)
-
-                notes = notes_obj["Body"].read().decode("utf-8")
-                logging.info(f"Notes: {notes}")
-                course_module_information.append(notes)
-            elif resource['resource_type'] == "Assessment":
-                logging.info("Updating assessment")
-                assessment_link = resource['resource_link']
-                logging.info(f"Assessment link: {assessment_link}")
-                assessment_key = assessment_link.split("amazonaws.com/")[1]
-                logging.info(f"Assessment key: {assessment_key}")
-                assessment_obj = s3_file_manager.get_object(assessment_key)
-                assessment = json.loads(
-                    assessment_obj["Body"].read().decode("utf-8"))
-                logging.info(f"Assessment: {assessment}")
+            result, assessment = await _process_resource(course_id, module_id, resource, s3_file_manager)
+            
+            if resource['resource_type'] == "Slide_Generated" and result:
+                slide_links.append(result)
+            elif resource['resource_type'] == "Video" and result:
+                video_links.append(result)
+            elif resource['resource_type'] == "Note" and result:
+                course_module_information.append(result)
+            elif resource['resource_type'] == "Assessment" and assessment:
                 questions[module["module_name"]] = assessment
-                logging.info(f"Questions: {questions}")
-            elif resource['resource_type'] == "Chatbot" and resource['resource_link'] != "":
+            elif resource['resource_type'] == "Chatbot" and result:
                 course["has_chatbot"] = True
-                logging.info("Updating chatbot")
-                chabot_link = resource['resource_link']
-                logging.info(f"Chatbot link: {chabot_link}")
-                chatbot_key = chabot_link.split("amazonaws.com/")[1]
-                logging.info(f"Chatbot key: {chatbot_key}")
-                chatbot_obj = s3_file_manager.get_object(chatbot_key)
-                chatbot_text = chatbot_obj["Body"].read().decode("utf-8")
-                chatbot_text_complete += chatbot_text
-                logging.info(f"Chatbot text: {chatbot_text}")
+                chatbot_text_complete += result
+    
+        if module['selected_labs']:
+            for lab_index, lab in enumerate(module['selected_labs']):
+                lab = atlas_client.find("lab_design", filter={"_id": ObjectId(lab)})[0]
+                if lab['status']=='Review':
+                    lab['status'] = 'Published'
+                    atlas_client.update("lab_design", filter={"_id": ObjectId(lab['_id'])}, update={"$set": lab})
+                    if len(module['selected_labs'])>1:
+                        course_module_information[-1]+=f"\n\n### Lab {lab_index}:\n"
+                    if lab['lab_url']:
+                        course_module_information[-1]+="\n\n### Demo:\n"
+                        course_module_information[-1]+=f"[![Run on QuSandbox](https://qucoursify.s3.us-east-1.amazonaws.com/qu-skillbridge/qusandbox_button.png)]({lab['lab_url']})\n"
+                    if lab['documentation_url']:
+                        course_module_information[-1]+="\n\n### Documentation:\n"
+                        course_module_information[-1]+=f"[![image](https://qucoursify.s3.us-east-1.amazonaws.com/qu-lab-design/images/codelabs.png)]({lab['documentation_url']})\n"
 
-    if course["has_chatbot"] == True:
-        logging.info("Creating chatbot")
-        retriever = Retriever()
-        Path(f"output/{course_id}/retriever").mkdir(parents=True,
-                                                    exist_ok=True)
-        retriever.create_vector_store(
-            chatbot_text_complete, f"output/{course_id}/retriever")
-        # Upload chatbot to s3
-        files = [f"output/{course_id}/retriever/bm25_retriever.pkl", f"output/{course_id}/retriever/faiss_retriever.pkl",
-                 f"output/{course_id}/retriever/hybrid_db/index.pkl", f"output/{course_id}/retriever/hybrid_db/index.faiss"]
-        file_keys = ["retriever/bm25_retriever.pkl", "retriever/faiss_retriever.pkl",
-                     "retriever/hybrid_db/index.pkl", "retriever/hybrid_db/index.faiss"]
-        for file, key in zip(files, file_keys):
-            await s3_file_manager.upload_file(file, f"qu-course-design/{course_id}/{key}")
-        chabot_link = f"https://qucoursify.s3.us-east-1.amazonaws.com/qu-course-design/{course_id}/retriever"
-        course["chatbot_link"] = chabot_link
+    # Setup chatbot if needed
+    if course["has_chatbot"]:
+        course["chatbot_link"] = await _setup_chatbot(course_id, chatbot_text_complete, s3_file_manager)
         course["has_chatbot"] = False
 
-    if len(questions) > 0:
-        logging.info("Creating quiz")
+    # Setup quiz if needed
+    if questions:
         course['has_quiz'] = True
-        Path(f"output/{course_id}/quiz").mkdir(parents=True, exist_ok=True)
-        quiz_file = open(f"output/{course_id}/quiz/quiz.json", "w")
-        json.dump(questions, quiz_file)
-        quiz_file.close()
-        key = f"qu-course-design/{course_id}/quiz.json"
-        s3_client = S3FileManager()
-        await s3_client.upload_file(f"output/{course_id}/quiz/quiz.json", key)
-        course["questions_file"] = "https://qucoursify.s3.us-east-1.amazonaws.com/" + key
+        course["questions_file"] = await _setup_quiz(course_id, questions)
 
-    course["slides_links"] = slide_links
-    course["course_names_slides"] = slide_names
-    course["videos_links"] = video_links
-    course["module_ids"] = module_ids
-    course["course_module_information"] = course_module_information
-    course["course_names_videos"] = slide_names
+    # Update course object
+    course.update({
+        "slides_links": slide_links,
+        "course_names_slides": slide_names,
+        "videos_links": video_links,
+        "module_ids": module_ids,
+        "course_module_information": course_module_information,
+        "course_names_videos": slide_names
+    })
 
+    # Update course design status
     for module in course_design['modules']:
         if str(module['module_id']) in module_ids:
             module['status'] = "Published"
-
-    logging.info("Updating course design")
+    
     course_design['status'] = "Published"
     mongo_client_env.update("course_design", filter={"_id": ObjectId(course_id)}, update={"$set": course_design})
 
@@ -282,6 +347,7 @@ def _create_certificate(course_id, course_name):
     asyncio.run(s3_client.upload_file(output_path, key))
 
     return "https://qucoursify.s3.us-east-1.amazonaws.com/" + key
+
 
 
 def generate_short_description(course):

@@ -3,6 +3,8 @@ import requests
 import base64
 import os
 from dotenv import load_dotenv
+import nacl.encoding
+import nacl.public
 
 # Load environment variables from a .env file
 load_dotenv()
@@ -13,74 +15,119 @@ GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")
 GITHUB_USERNAME = os.getenv("GITHUB_USERNAME")  
 
 
+def get_repo_public_key(owner, repo, token):
+    """
+    Retrieve the public key (and key_id) for a given GitHub repository
+    so we can encrypt secrets for GitHub Actions.
+    """
+    url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/actions/secrets/public-key"
+    headers = {
+        "Accept": "application/vnd.github.v3+json",
+        "Authorization": f"Bearer {token}",
+    }
+    resp = requests.get(url, headers=headers)
+    resp.raise_for_status()
+    data = resp.json()
+    return data["key"], data["key_id"]
 
-gitignore_content = """
-# Python
-*.pyc
-__pycache__/
 
-# Streamlit
-.streamlit/
-"""
+def encrypt_secret(public_key: str, secret_value: str) -> str:
+    """
+    Encrypt a plaintext secret using the repository's public key (Base64).
+    GitHub requires libsodium sealed box encryption.
+    """
+    public_key_bytes = base64.b64decode(public_key)
+    sealed_box = nacl.public.SealedBox(nacl.public.PublicKey(public_key_bytes))
+    encrypted = sealed_box.encrypt(secret_value.encode("utf-8"))
+    return base64.b64encode(encrypted).decode("utf-8")
 
 
-requirements_content = """
-streamlit==1.24.0
-"""
+def put_secret(owner, repo, token, secret_name, encrypted_value, key_id):
+    """
+    Create or update a GitHub Actions secret in the specified repo.
+    """
+    url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/actions/secrets/{secret_name}"
+    headers = {
+        "Accept": "application/vnd.github.v3+json",
+        "Authorization": f"Bearer {token}",
+    }
+    payload = {
+        "encrypted_value": encrypted_value,
+        "key_id": key_id
+    }
+    resp = requests.put(url, headers=headers, json=payload)
+    if resp.status_code in [201, 204]:
+        print(f"Secret {secret_name} created/updated successfully.")
+    else:
+        print(f"Failed to create/update secret {secret_name}: {resp.text}")
+        resp.raise_for_status()
 
-template_streamlit_app = """
-import streamlit as st
 
-st.set_page_config(page_title="QuCreate Streamlit Lab", layout="wide")
-st.sidebar.image("assets/images/company_logo.jpg")
-st.sidebar.divider()
-st.title("QuCreate Streamlit Lab")
-st.divider()
+def create_or_update_file(owner, repo, token, file_path, file_content, commit_message, branch="main"):
+    """
+    Create or update a file in the given repo using the GitHub Content API.
+    file_path is something like '.github/workflows/my-workflow.yml'.
+    file_content is a string (the file contents).
+    """
+    # 1. Check if file exists (to get its current sha). If it doesn't exist, we'll create it.
+    get_url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/contents/{file_path}?ref={branch}"
+    headers = {
+        "Accept": "application/vnd.github.v3+json",
+        "Authorization": f"Bearer {token}",
+    }
+    get_resp = requests.get(get_url, headers=headers)
 
-# Code goes here
+    if get_resp.status_code == 200:
+        # File exists; get its SHA
+        file_sha = get_resp.json()["sha"]
+    elif get_resp.status_code == 404:
+        # File doesn't exist
+        file_sha = None
+    else:
+        get_resp.raise_for_status()
 
-st.divider()
-st.write("© 2025 QuantUniversity. All Rights Reserved.")
-st.caption("The purpose of this demonstration is solely for educational use and illustration. "
-           "To access the full legal documentation, please visit this link. Any reproduction of this demonstration "
-           "requires prior written consent from QuantUniversity.")
-"""
+    # 2. Create or update the file
+    put_url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/contents/{file_path}"
+    payload = {
+        "message": commit_message,
+        "content": base64.b64encode(file_content.encode("utf-8")).decode("utf-8"),
+        "branch": branch
+    }
+    if file_sha:
+        payload["sha"] = file_sha  # required to update an existing file
 
-readme_content = """
-# QuCreate Streamlit Lab
+    put_resp = requests.put(put_url, headers=headers, json=payload)
+    if put_resp.status_code in [200, 201]:
+        print(f"File '{file_path}' created/updated successfully in branch '{branch}'.")
+    else:
+        print(f"Failed to create/update file '{file_path}': {put_resp.text}")
+        put_resp.raise_for_status()
 
-This repository contains a Streamlit application for demonstrating the features and capabilities of the QuCreate platform.
 
-## Features
-- Streamlit sidebar with a company logo.
-- Template for easy development.
-- Placeholder for adding custom code.
-
-## Getting Started
-
-### Prerequisites
-- Python 3.8 or later
-- Streamlit installed (see `requirements.txt`).
-
-### Installation
-1. Clone the repository
-2. Install dependencies:
-`pip install -r requirements.txt`
-
-### Running the Application
-1. Run the Streamlit app:
-
-### Development
-1. Modify the `app.py` file to add your custom code.
-2. Use the placeholder section (`# Code goes here`) to add new functionality.
-
-### Deployment
-- Deploy your Streamlit app using Streamlit Sharing, Docker, or any other platform supporting Python web applications.
-
-## License
-© 2025 QuantUniversity. All Rights Reserved. Educational use only. For licensing details, please contact QuantUniversity.
-"""
-
+def create_tag(owner, repo, token, tag_name, commit_sha, tag_message=None):
+    """
+    Create (push) a lightweight Git tag referencing an existing commit.
+    This will create a new ref named 'refs/tags/{tag_name}' pointing to commit_sha.
+    
+    For an *annotated* tag, you could:
+      1) create a tag object via POST /repos/{owner}/{repo}/git/tags
+      2) then create a reference to that object
+    """
+    url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/git/refs"
+    headers = {
+        "Accept": "application/vnd.github.v3+json",
+        "Authorization": f"Bearer {token}",
+    }
+    data = {
+        "ref": f"refs/tags/{tag_name}",
+        "sha": commit_sha
+    }
+    resp = requests.post(url, headers=headers, json=data)
+    if resp.status_code == 201:
+        print(f"Tag '{tag_name}' created successfully.")
+    else:
+        print(f"Failed to create tag '{tag_name}': {resp.text}")
+        resp.raise_for_status()
 
 
 

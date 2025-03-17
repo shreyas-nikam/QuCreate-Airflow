@@ -24,20 +24,20 @@ from airflow.operators.bash import BashOperator
 from utils.prompt_handler import PromptHandler
 from utils.mongodb_client import AtlasClient
 from utils.s3_file_manager import S3FileManager
-from labs.github_helpers import upload_file_to_github, update_file_in_github
+from labs.github_helpers import upload_file_to_github, update_file_in_github, get_repo_public_key, encrypt_secret, put_secret, create_or_update_file, create_tag, GITHUB_API_URL, GITHUB_USERNAME
 from utils.converter import _convert_object_ids_to_strings
 
 from smolagents import CodeAgent, LiteLLMModel, tool, VisitWebpageTool, MultiStepAgent
 
 load_dotenv()
-GITHUB_USERNAME = os.getenv("GITHUB_USERNAME")
+
 
 
 docker_compose_file="""version: "3.12"
 
 services:
   {LAB_ID}_service:
-    build: .
+    image: {LAB_ID}_streamlit_app
     container_name: {LAB_ID}_container
     # Adjust your desired external port mapping here. For example:
     # "8502:8501" means the app is internally on 8501, but externally accessible on 8502.
@@ -45,6 +45,7 @@ services:
       - "{PORT}:8501"
     environment:
       - PORT=8501  # This must match the internal port used by Streamlit
+      - LAB_ID={LAB_ID}
     restart: always
 """
 
@@ -82,6 +83,49 @@ enableCORS = false
 enableXsrfProtection = false
 """
 
+
+github_actions = """
+name: Build and Push to Docker Hub
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v2
+
+      - name: Log in to Docker Hub
+        run: |
+          echo "${{ secrets.DOCKERHUB_PASSWORD }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+      - name: Build Docker image
+        run: |
+          docker build -t {DOCKER_IMAGE_NAME} .
+          # e.g., docker build -t your-username/streamlit-app:latest .
+
+      - name: Push Docker image
+        run: |
+          docker push {DOCKER_IMAGE_NAME}
+          # e.g., docker push your-username/streamlit-app:latest
+"""
+
+
+gitignore_content = """
+# Python
+*.pyc
+__pycache__/
+
+# Streamlit
+.streamlit/
+"""
+
+
 client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 
@@ -98,59 +142,7 @@ def generate_lab(lab_id, port, **kwargs):
     else:
         model = LiteLLMModel(model_id=os.getenv("AGENT_MODEL"), api_key=os.getenv("AGENT_KEY"))
 
-    prompt = """
-Task:
-Create a Streamlit application for the lab "{LAB_NAME}" with the given technical specifications.
-
-Instructions:
-1. There SHOULD be an app.py file in the root directory of the repository. 
-Create a multi-page application for ease of maintainence and development. 
-Compulsorily have multiple pages in multiple files for different functionalities. You can have as many files/directories as you need.
-1.1. The main app.py for the streamlit application should enclose the code in the following codeblock:
-```python
-
-import streamlit as st
-
-st.set_page_config(page_title="QuCreate Streamlit Lab", layout="wide")
-st.sidebar.image("https://www.quantuniversity.com/assets/img/logo5.jpg")
-st.sidebar.divider()
-st.title("QuLab")
-st.divider()
-
-# Code goes here
-
-st.divider()
-st.write("© 2025 QuantUniversity. All Rights Reserved.")
-st.caption("The purpose of this demonstration is solely for educational use and illustration. "
-           "To access the full legal documentation, please visit this link. Any reproduction of this demonstration "
-           "requires prior written consent from QuantUniversity.")
-```
-
-2. Provide comprehensive explanations to users through markdown about visualizations, data, crucial steps, and formulas. 
-Ensure the application is interactive, allowing users to visualize real-time changes in input. 
-Include an array of graphs, images, charts, and other visualizations to enhance interactivity. (Use plotly instead of matplotlib for visualizations)
-
-
-3. Also add the readme file and requirements.txt file to the repository compulsorily. I have also provided the Dockerfile and docker-compose.yml file for the lab. Only modify installation instructions in them if extra installations (os-level/others) are required other than requirements.txt.
-4. Compulsorily add the (modified) dockerfile, docker-compose.yml, requirements.txt, app.py and README.md (and other generated files) files to the repository using the write_file_to_github tool. The tool requires complete working code.
-5. Validate the generated code before writing it to github for red flags (e.g. destructive commands, suspicious imports, sensitive information, etc.) and write them in markdown on the frontend.
-
-
-Technical Specifications:
-```
-{TECH_SPEC}
-```
-
-Dockerfile:
-```
-{DOCKERFILE}
-```
-
-docker-compose.yml:
-```
-{DOCKER_COMPOSE}
-```
-"""
+    prompt = PromptHandler().get_prompt("GENERATE_LAB_PROMPT")
     prompt = prompt.format(LAB_NAME=lab["lab_name"], TECH_SPEC=lab["technical_specifications"], DOCKERFILE=docker_file, DOCKER_COMPOSE=docker_compose_file.format(LAB_ID=lab_id, PORT=port))
 
     code = ""
@@ -186,14 +178,57 @@ docker-compose.yml:
 
     tools = [write_file_to_github]
 
-    # executor type to be added
-    agent = CodeAgent(model=model, tools=tools, planning_interval=2, executor_type='e2b')
+    # executor type to be added, does not work yet
+    agent = CodeAgent(model=model, tools=tools, planning_interval=2)
 
     agent.run(prompt)
 
+    # write the github action file to the repository
+    write_file_to_github(".github/workflows/build_docker_and_push.yml", github_actions.format(DOCKER_IMAGE_NAME=f"{GITHUB_USERNAME}/{lab_id}_streamlit_app"))
+    write_file_to_github(".gitignore", gitignore_content)
+    write_file_to_github("docker-compose.yml", docker_compose_file.format(LAB_ID=lab_id, PORT=port))
+    write_file_to_github(".streamlit/config.toml", streamlit_conf_file.format(LAB_ID=lab_id, PORT=port))
+    
+
+    owner = GITHUB_USERNAME
+    repo = lab_id
+    github_token = os.getenv("GITHUB_TOKEN")
+    branch = "main"
+    
+    # Example secrets to add:
+    secrets_to_add = {
+        "DOCKERHUB_USERNAME": os.getenv("DOCKERHUB_USERNAME"),
+        "DOCKERHUB_PASSWORD": os.getenv("DOCKERHUB_PASSWORD"),
+    }
+
+    # Tag info
+    tag_name = "v1.0.0"
+    tag_commit_sha = "HEAD"  # or specify a specific commit SHA
+
+    print("Fetching public key...")
+    public_key, key_id = get_repo_public_key(owner, repo, github_token)
+    
+    for secret_name, secret_value in secrets_to_add.items():
+        encrypted_value = encrypt_secret(public_key, secret_value)
+        put_secret(owner, repo, github_token, secret_name, encrypted_value, key_id)
+
+    
+    print(f"Creating tag {tag_name} on commit SHA: {tag_commit_sha}")
+
+    latest_commit_url = f"{GITHUB_API_URL}/repos/{owner}/{repo}/git/refs/heads/{branch}"
+    headers = {
+        "Accept": "application/vnd.github.v3+json",
+        "Authorization": f"Bearer {github_token}",
+    }
+    r = requests.get(latest_commit_url, headers=headers)
+    r.raise_for_status()
+    latest_commit_sha = r.json()["object"]["sha"]
+
+    # Now create the tag at that latest commit
+    create_tag(owner, repo, github_token, tag_name, latest_commit_sha)
+
     return code
    
-
 
 def fetch_details_from_mongo_task(**kwargs):
     """
@@ -361,11 +396,11 @@ def get_claat_codelab(lab_id, streamlit_code, **kwargs):
     logging.info("Updated prompt for generating codelab:", codelab_prompt)
     logging.info("================================================================")
 
-    
     response = client.models.generate_content(
         model=os.getenv("GEMINI_MODEL"),
         contents=codelab_prompt,
     ).text
+
     atlas_client = AtlasClient()
     lab = atlas_client.find("lab_design", filter={"_id": ObjectId(lab_id)})[0]
 
@@ -374,8 +409,39 @@ def get_claat_codelab(lab_id, streamlit_code, **kwargs):
     if "```markdown" in response:
         response = response[response.index("```markdown")+12:response.rindex("```")]
 
-    headers = """id: {lab_id}
-summary: {lab_name}
+    headers = """id: {lab_id}_documentation
+summary: {lab_name} Documentation
+feedback link: https://docs.google.com/forms/d/e/1FAIpQLSfWkOK-in_bMMoHSZfcIvAeO58PAH9wrDqcxnJABHaxiDqhSA/viewform?usp=sf_link
+environments: Web
+status: Published
+"""
+    headers = headers.format(lab_id=lab_id, lab_name=lab["lab_name"])
+    response = headers + response.replace("---", "")
+
+    return response
+
+
+def get_claat_user_guide(lab_id, streamlit_code, **kwargs):
+    prompt = PromptHandler().get_prompt("GET_USER_GUIDE_PROMPT")
+    codelab_prompt = prompt.format(STREAMLIT_CODE=streamlit_code)
+    logging.info("Updated prompt for generating codelab:", codelab_prompt)
+    logging.info("================================================================")
+
+    response = client.models.generate_content(
+        model=os.getenv("GEMINI_MODEL"),
+        contents=codelab_prompt,
+    ).text
+
+    atlas_client = AtlasClient()
+    lab = atlas_client.find("lab_design", filter={"_id": ObjectId(lab_id)})[0]
+
+    logging.info("Response from Gemini API:", response)
+    
+    if "```markdown" in response:
+        response = response[response.index("```markdown")+12:response.rindex("```")]
+
+    headers = """id: {lab_id}_user_guide
+summary: {lab_name} User Guide
 feedback link: https://docs.google.com/forms/d/e/1FAIpQLSfWkOK-in_bMMoHSZfcIvAeO58PAH9wrDqcxnJABHaxiDqhSA/viewform?usp=sf_link
 environments: Web
 status: Published
@@ -590,13 +656,18 @@ def final_task(lab_id, port, **kwargs):
     mongodb_client = AtlasClient()
     lab_url = f"https://qucreate.qusandbox.com/{lab_id}"
     repo_url = f"https://github.com/{GITHUB_USERNAME}/{lab_id}"
-    documentation_url = f"https://qucreate.qusandbox.com/documentation/{lab_id}/"
+    documentation_url = f"https://qucreate.qusandbox.com/documentation/{lab_id}/documentation/"
+    user_guide_url = f"https://qucreate.qusandbox.com/documentation/{lab_id}/user_guide/"
     mongodb_client.update("lab_design", 
                             filter={"_id": ObjectId(lab_id)}, 
                             update={"$set": {"status": "Review", 
                                         "lab_url": lab_url, 
                                         "repo_url": repo_url,
-                                        "documentation_url": documentation_url}})
+                                        "documentation_url": documentation_url,
+                                        "user_guide_url": user_guide_url
+                                        }
+                                    }
+                            )
     logging.info(f"Updated lab {lab_id} with review status and URLs")
     
     # Send notification to users
@@ -735,6 +806,15 @@ with DAG(
                 "{{ ti.xcom_pull(task_ids='generate_lab') }}"]
     )
 
+    get_claat_user_guide_task = PythonOperator(
+        task_id="get_claat_user_guide",
+        python_callable=get_claat_user_guide,
+        provide_context=True,
+        op_args=["{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
+                "{{ ti.xcom_pull(task_ids='generate_lab') }}"]
+    )
+
+
     # get_readme_file_task = PythonOperator(
     #     task_id="get_readme_file",
     #     python_callable=get_readme_file,
@@ -798,7 +878,7 @@ fi
     docker_compose_command = """
 LAB_ID="{LAB_ID}"
 cd /home/ubuntu/QuLabs/$LAB_ID
-sudo docker compose build
+sudo docker compose pull
 """
 
     build_docker_compose_command = PythonOperator(
@@ -867,33 +947,51 @@ echo "Updating Nginx snippet for lab: $LAB_ID on port $LAB_PORT"
         do_xcom_push=True,
     )
 
-    def create_claat_file(lab_id, claat_documentation, **kwargs):
-        source_file_path = f"/home/ubuntu/QuLabs/{lab_id}/documentation/codelab.md"
-        destination_file_path = f"/home/ubuntu/QuLabs/documentation/{lab_id}/documentation.md"
+    def create_claat_file(lab_id, claat_documentation, user_guide, **kwargs):
+        file_path = f"/home/ubuntu/QuLabs/documentation/{lab_id}/documentation.md"
         Path(f"/home/ubuntu/QuLabs/documentation/{lab_id}").mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(source_file_path, destination_file_path)
-        return destination_file_path
+        with open(file_path, "w") as f:
+            f.write(claat_documentation)
+        
+        user_guide_path = f"/home/ubuntu/QuLabs/documentation/{lab_id}/user_guide.md"
+        Path(f"/home/ubuntu/QuLabs/documentation/{lab_id}").mkdir(parents=True, exist_ok=True)
+        with open(user_guide_path, "w") as f:
+            f.write(user_guide)
+
+        return file_path
     
     create_claat_file_task = PythonOperator(
         task_id="create_claat_file",
         python_callable=create_claat_file,
         provide_context=True,
         op_args=["{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}", 
-                 "{{ ti.xcom_pull(task_ids='get_claat_codelab') }}"],
+                 "{{ ti.xcom_pull(task_ids='get_claat_codelab') }}",
+                 "{{ ti.xcom_pull(task_ids='get_claat_user_guide') }}"]
     )
 
 
     claat_command = """
 export LAB_ID="{LAB_ID}"
 cd /home/ubuntu/QuLabs/documentation/$LAB_ID/
-if [ ! -d "$LAB_ID" ]; then
+if [ ! -d "$LAB_ID_documentation" ]; then
     claat export documentation.md
 else
-    rm -rf $LAB_ID
+    rm -rf $LAB_ID_documentation
     claat export documentation.md
 fi
+if [ ! -d "$LAB_ID_user_guide" ]; then
+    claat export user_guide.md
+else
+    rm -rf $LAB_ID_user_guide
+    claat export user_guide.md
+fi
+
 sudo mkdir -p /var/www/codelabs/$LAB_ID
-sudo cp -r /home/ubuntu/QuLabs/documentation/$LAB_ID/$LAB_ID/. /var/www/codelabs/$LAB_ID
+sudo mkdir -p /var/www/codelabs/$LAB_ID/documentation
+sudo mkdir -p /var/www/codelabs/$LAB_ID/user_guide
+
+sudo cp -r /home/ubuntu/QuLabs/documentation/$LAB_ID/$LAB_ID_documentation/. /var/www/codelabs/$LAB_ID/documentation/
+sudo cp -r /home/ubuntu/QuLabs/documentation/$LAB_ID/$LAB_ID_user_guide/. /var/www/codelabs/$LAB_ID/user_guide/
 """
 
     build_claat_command = PythonOperator(
@@ -922,16 +1020,17 @@ sudo cp -r /home/ubuntu/QuLabs/documentation/$LAB_ID/$LAB_ID/. /var/www/codelabs
 
     fetch_details_from_mongo_step >> \
     generate_lab_task >> \
-    get_claat_codelab_task
-    # build_pull_repo_command >> \
-    # pull_repo_remote >> \
-    # build_docker_compose_command >> \
-    # docker_compose_build >> \
-    # build_docker_compose_up_command >> \
-    # docker_compose_up >> \
-    # build_update_nginx_snippet_command >> \
-    # update_nginx_snippet >> \
-    # create_claat_file_task >> \
-    # build_claat_command >> \
-    # claat_command_step >> \
-    # end
+    get_claat_codelab_task >> \
+    get_claat_user_guide_task >> \
+    build_pull_repo_command >> \
+    pull_repo_remote >> \
+    build_docker_compose_command >> \
+    docker_compose_build >> \
+    build_docker_compose_up_command >> \
+    docker_compose_up >> \
+    build_update_nginx_snippet_command >> \
+    update_nginx_snippet >> \
+    create_claat_file_task >> \
+    build_claat_command >> \
+    claat_command_step >> \
+    end

@@ -94,8 +94,9 @@ def fetch_details_from_mongo_step(entry_id, **kwargs):
     entry = entry[0]
     course_id = entry.get("course_id")
     module_id = entry.get("module_id")
+    template_url = entry.get("template_url")
 
-    return course_id, module_id
+    return course_id, module_id, template_url
 
 
 def get_resource_link_step(course_id, module_id, **kwargs):
@@ -113,8 +114,8 @@ def extract_content_step(module_name, slide_content_link, **kwargs):
     return markdown, transcript
 
 
-def generate_pptx_step(markdown, module_id, **kwargs):
-    pptx_file_path = _generate_pptx(markdown, module_id)
+def generate_pptx_step(markdown, module_id, template_url, **kwargs):
+    pptx_file_path = _generate_pptx(markdown, module_id, template_url)
     return pptx_file_path
 
 
@@ -224,7 +225,8 @@ with DAG(
         task_id='generate_pptx',
         python_callable=generate_pptx_step,
         op_args=["{{ task_instance.xcom_pull(task_ids='extract_content')[0] }}",
-                 "{{ task_instance.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}"],
+                 "{{ task_instance.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}",
+                 "{{ task_instance.xcom_pull(task_ids='fetch_details_from_mongo')[2] }}"],
         provide_context=True
     )
 

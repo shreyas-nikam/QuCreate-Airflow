@@ -452,8 +452,10 @@ Enclose the generated README file within three backticks to ensure proper format
 
 "GET_CODELAB_PROMPT": """
 Follow the guidelines below to generate a codelab markdown for the attached streamlit application.
-Highlight the importance of the application, the concepts explained, etc in the first step so that the user gets proper context.
+The codelab will focus on the functionalities of the application and provide a comprehensive guide for developers to understand the application.
+Highlight the importance of the application, the concepts explained, etc in the first step so that the developer gets proper context.
 The codelab should be comprehensive and cover all the functionalities of the application.
+If required, create architecture diagrams, flowcharts, or any other visual representation to explain the application's working.
 
 Output format:
 Enclose the output in three backticks and markdown format.
@@ -507,16 +509,16 @@ perform syntax highlighting on code blocks, but it is not always effective at
 guessing the language to highlight in. Put the name of the code language after
 the first fence to explicitly specify which highlighting plan to use.
 
-    ```go
-    This block will be highlighted as Go source code.
-    ```
+```go
+This block will be highlighted as Go source code.
+```
 
 If you'd like to disable syntax highlighting, you can specify the language
 hint to "console":
 
-    ```console
-    This block will not be syntax highlighted.
-    ```
+```console
+This block will not be syntax highlighted.
+```
 
 #### Info Boxes
 
@@ -551,9 +553,146 @@ will apply special button-esque styling to any link that begins with the word
 Streamlit Application: 
 
 {STREAMLIT_CODE}
-"""
+""",
+
+"GET_USER_GUIDE_PROMPT": """
+Follow the guidelines below to generate a codelab user guide markdown for the attached streamlit application.
+The codelab will focus on the functionalities of the application and provide a comprehensive guide for users to understand how to use the application.
+Highlight the importance of the application, the concepts explained, etc in the first step so that the user gets proper context.
+The user guide should take the user step by step to understand the working of the application, but should not focus on the code, but the concepts and how the application works to explain the concepts.
+The user guide should not be technical unless the application itself is technical (for example, if the codelab is about usage of numpy, it can and must have technical aspects to it).
+
+Output format:
+Enclose the output in three backticks and markdown format.
+For Example:
+```markdown
+```
+
+Guidelines:
+Do not have any seperators like ---, *** etc in the codelab.
+
+## Title
+
+The title is a Header 1.
+
+```
+# Title of codelab
+```
+
+## Steps
+
+A step is declared by putting the step's title in a Header 2. All content
+following a step title will be considered part of the step, until the next step
+title, or the end of the document.
+
+```
+## Codelab Step
+```
+
+### Duration
+
+Steps should be marked with the expected duration to complete them. To label a
+step with a duration, put "Duration: TIME" by itself on the line directly
+following the step title, where TIME is formatted like "hh:mm:ss" (or "mm:ss" if
+only one `:` is provided).
+
+```
+## Codelab Step
+Duration: 1:25
+```
+
+#### Fenced Code and Language Hints
+
+Code blocks may be declared by placing them between two lines containing just
+three backticks (fenced code blocks). The codelab renderer will attempt to
+perform syntax highlighting on code blocks, but it is not always effective at
+guessing the language to highlight in. Put the name of the code language after
+the first fence to explicitly specify which highlighting plan to use.
+
+```go
+This block will be highlighted as Go source code.
+```
+
+If you'd like to disable syntax highlighting, you can specify the language
+hint to "console":
+
+```console
+This block will not be syntax highlighted.
+```
+
+#### Info Boxes
+
+Info boxes are colored callouts that enclose special information in codelabs.
+Positive info boxes should contain positive information like best practices and
+time-saving tips. Negative infoboxes should contain information like warnings
+and API usage restriction. If you want to highlight important information, use the <b> tag inside the aside tag.
+
+```
+<aside class="positive">
+This will appear in a <b>positive</b> info box.
+</aside>
+
+<aside class="negative">
+This will appear in a <b>negative</b> info box.
+</aside>
+```
+
+```
 
 
+Streamlit Application: 
+
+{STREAMLIT_CODE}
+""",
+
+"GENERATE_LAB_PROMPT": """"
+Task:
+Create a Streamlit application for the lab "{LAB_NAME}" with the given technical specifications.
+
+Instructions:
+1. There SHOULD be an app.py file in the root directory of the repository. 
+Create a multi-page application for ease of maintainence and development. 
+Compulsorily have multiple pages in multiple files for different functionalities. You can have as many files/directories as you need.
+1.1. The main app.py for the streamlit application should enclose the code in the following codeblock:
+```python
+
+import streamlit as st
+
+st.set_page_config(page_title="QuCreate Streamlit Lab", layout="wide")
+st.sidebar.image("https://www.quantuniversity.com/assets/img/logo5.jpg")
+st.sidebar.divider()
+st.title("QuLab")
+st.divider()
+
+# Code goes here
+
+st.divider()
+st.write("© 2025 QuantUniversity. All Rights Reserved.")
+st.caption("The purpose of this demonstration is solely for educational use and illustration. "
+           "To access the full legal documentation, please visit this link. Any reproduction of this demonstration "
+           "requires prior written consent from QuantUniversity.")
+```
+
+2. Provide comprehensive explanations to users through markdown about visualizations, data, crucial steps, and formulas. 
+Ensure the application is interactive, allowing users to visualize real-time changes in input. 
+Include an array of graphs, images, charts, and other visualizations to enhance interactivity. (Use plotly instead of matplotlib for visualizations)
+
+
+3. Also add the readme file and requirements.txt file to the repository compulsorily. I have also provided the Dockerfile and docker-compose.yml file for the lab. Only modify installation instructions in them if extra installations (os-level/others) are required other than requirements.txt.
+4. Compulsorily add the (modified) dockerfile, docker-compose.yml, requirements.txt, app.py and README.md (and other generated files) files to the repository using the write_file_to_github tool. The tool requires complete working code.
+5. Validate the generated code before writing it to github for red flags (e.g. destructive commands, suspicious imports, sensitive information, etc.) and write them in markdown on the frontend.
+
+
+Technical Specifications:
+```
+{TECH_SPEC}
+```
+
+Dockerfile:
+```
+{DOCKERFILE}
+```
+""",
 }
 
 
