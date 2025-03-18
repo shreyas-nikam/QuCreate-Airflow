@@ -877,6 +877,7 @@ fi
     docker_compose_command = """
 LAB_ID="{LAB_ID}"
 cd /home/ubuntu/QuLabs/$LAB_ID
+sudo docker login
 sudo docker compose pull
 """
 

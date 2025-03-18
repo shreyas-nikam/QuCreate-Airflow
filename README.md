@@ -74,6 +74,8 @@ sql_alchemy_conn=postgresql+psycopg2://<airflow_user>:<password>@localhost:5432/
 auth_backends=airflow.api.auth.backend.basic_auth
 base_url=http://localhost:8080/airflow
 ```
+10. Run docker login and follow the instructions.
+
 
 
 Yet to be implemented:
