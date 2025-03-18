@@ -15,8 +15,6 @@ from bson import ObjectId
 # Airflow Imports
 from airflow import DAG
 from airflow.operators.python import PythonOperator
-from airflow.providers.ssh.operators.ssh import SSHOperator
-from airflow.providers.ssh.hooks.ssh import SSHHook
 from airflow.operators.bash import BashOperator
 
 
@@ -27,7 +25,7 @@ from utils.s3_file_manager import S3FileManager
 from labs.github_helpers import upload_file_to_github, update_file_in_github, get_repo_public_key, encrypt_secret, put_secret, create_or_update_file, create_tag, GITHUB_API_URL, GITHUB_USERNAME
 from utils.converter import _convert_object_ids_to_strings
 
-from smolagents import CodeAgent, LiteLLMModel, tool, VisitWebpageTool, MultiStepAgent
+from smolagents import CodeAgent, LiteLLMModel, tool
 
 load_dotenv()
 
@@ -37,7 +35,7 @@ docker_compose_file="""version: "3.12"
 
 services:
   {LAB_ID}_service:
-    image: {LAB_ID}_streamlit_app
+    image: {DOCKERHUB_USERNAME}/{LAB_ID}_streamlit_app
     container_name: {LAB_ID}_container
     # Adjust your desired external port mapping here. For example:
     # "8502:8501" means the app is internally on 8501, but externally accessible on 8502.
@@ -102,7 +100,7 @@ jobs:
 
       - name: Log in to Docker Hub
         run: |
-          echo "${{ secrets.DOCKERHUB_PASSWORD }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          echo "${{{{ secrets.DOCKERHUB_PASSWORD }}}}" | docker login -u "${{{{ secrets.DOCKERHUB_USERNAME }}}}" --password-stdin
 
       - name: Build Docker image
         run: |
@@ -143,7 +141,7 @@ def generate_lab(lab_id, port, **kwargs):
         model = LiteLLMModel(model_id=os.getenv("AGENT_MODEL"), api_key=os.getenv("AGENT_KEY"))
 
     prompt = PromptHandler().get_prompt("GENERATE_LAB_PROMPT")
-    prompt = prompt.format(LAB_NAME=lab["lab_name"], TECH_SPEC=lab["technical_specifications"], DOCKERFILE=docker_file, DOCKER_COMPOSE=docker_compose_file.format(LAB_ID=lab_id, PORT=port))
+    prompt = prompt.format(LAB_NAME=lab["lab_name"], TECH_SPEC=lab["technical_specifications"], DOCKERFILE=docker_file, DOCKER_COMPOSE=docker_compose_file.format(LAB_ID=lab_id, PORT=port, DOCKERHUB_USERNAME=os.environ.get("DOCKERHUB_USERNAME")))
 
     code = ""
     # create a tool to write file and filecontent to github
@@ -179,12 +177,12 @@ def generate_lab(lab_id, port, **kwargs):
     tools = [write_file_to_github]
 
     # executor type to be added, does not work yet
-    agent = CodeAgent(model=model, tools=tools, planning_interval=2)
+    agent = CodeAgent(model=model, tools=tools, planning_interval=2, additional_authorized_imports=['unittest', 'plotly'])
 
     agent.run(prompt)
 
     # write the github action file to the repository
-    write_file_to_github(".github/workflows/build_docker_and_push.yml", github_actions.format(DOCKER_IMAGE_NAME=f"{GITHUB_USERNAME}/{lab_id}_streamlit_app"))
+    write_file_to_github(".github/workflows/build_docker_and_push.yml", github_actions.format(DOCKER_IMAGE_NAME=f"{os.environ.get('DOCKERHUB_USERNAME')}/{lab_id}_streamlit_app"))
     write_file_to_github(".gitignore", gitignore_content)
     write_file_to_github("docker-compose.yml", docker_compose_file.format(LAB_ID=lab_id, PORT=port))
     write_file_to_github(".streamlit/config.toml", streamlit_conf_file.format(LAB_ID=lab_id, PORT=port))
@@ -197,12 +195,13 @@ def generate_lab(lab_id, port, **kwargs):
     
     # Example secrets to add:
     secrets_to_add = {
-        "DOCKERHUB_USERNAME": os.getenv("DOCKERHUB_USERNAME"),
-        "DOCKERHUB_PASSWORD": os.getenv("DOCKERHUB_PASSWORD"),
+        "DOCKERHUB_USERNAME": os.environ.get("DOCKERHUB_USERNAME"),
+        "DOCKERHUB_PASSWORD": os.environ.get("DOCKERHUB_PASSWORD"),
     }
 
     # Tag info
-    tag_name = "v1.0.0"
+    tag = ObjectId()
+    tag_name = "v1.0.1"+str(tag)
     tag_commit_sha = "HEAD"  # or specify a specific commit SHA
 
     print("Fetching public key...")
@@ -210,8 +209,8 @@ def generate_lab(lab_id, port, **kwargs):
     
     for secret_name, secret_value in secrets_to_add.items():
         encrypted_value = encrypt_secret(public_key, secret_value)
+        print("Adding secrets", secret_name, encrypted_value)
         put_secret(owner, repo, github_token, secret_name, encrypted_value, key_id)
-
     
     print(f"Creating tag {tag_name} on commit SHA: {tag_commit_sha}")
 

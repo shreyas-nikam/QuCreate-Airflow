@@ -676,11 +676,10 @@ st.caption("The purpose of this demonstration is solely for educational use and 
 2. Provide comprehensive explanations to users through markdown about visualizations, data, crucial steps, and formulas. 
 Ensure the application is interactive, allowing users to visualize real-time changes in input. 
 Include an array of graphs, images, charts, and other visualizations to enhance interactivity. (Use plotly instead of matplotlib for visualizations)
-
-
-3. Also add the readme file and requirements.txt file to the repository compulsorily. I have also provided the Dockerfile and docker-compose.yml file for the lab. Only modify installation instructions in them if extra installations (os-level/others) are required other than requirements.txt.
-4. Compulsorily add the (modified) dockerfile, docker-compose.yml, requirements.txt, app.py and README.md (and other generated files) files to the repository using the write_file_to_github tool. The tool requires complete working code.
-5. Validate the generated code before writing it to github for red flags (e.g. destructive commands, suspicious imports, sensitive information, etc.) and write them in markdown on the frontend.
+3. Generate unit tests for the functionality. Then run the unit tests and check if the generated code passes the tests. If it does not, then modify the code to pass the tests.
+4. Next, generate integration tests for the functionality. Then run the integration tests and check if the generated code passes the tests. If it does not, then modify the code to pass the tests.3. Also add the readme file and requirements.txt file to the repository compulsorily. I have also provided the Dockerfile and docker-compose.yml file for the lab. Only modify installation instructions in them if extra installations (os-level/others) are required other than requirements.txt.
+5. COMPULSORILY add the (modified) dockerfile, requirements.txt, app.py and README.md, the test files and other generated files to the repository using the write_file_to_github tool. The tool requires complete working code.
+6. Validate the generated code before writing it to github for red flags (e.g. destructive commands, suspicious imports, sensitive information, etc.) and write them in markdown on the frontend.
 
 
 Technical Specifications:
