@@ -31,21 +31,21 @@ load_dotenv()
 
 
 
-docker_compose_file="""version: "3.12"
+# docker_compose_file="""version: "3.12"
 
-services:
-  {LAB_ID}_service:
-    image: {DOCKERHUB_USERNAME}/{LAB_ID}_streamlit_app
-    container_name: {LAB_ID}_container
-    # Adjust your desired external port mapping here. For example:
-    # "8502:8501" means the app is internally on 8501, but externally accessible on 8502.
-    ports:
-      - "{PORT}:8501"
-    environment:
-      - PORT=8501  # This must match the internal port used by Streamlit
-      - LAB_ID={LAB_ID}
-    restart: always
-"""
+# services:
+#   {LAB_ID}_service:
+#     image: {DOCKERHUB_USERNAME}/{LAB_ID}_streamlit_app:latest
+#     container_name: {LAB_ID}_container
+#     # Adjust your desired external port mapping here. For example:
+#     # "8502:8501" means the app is internally on 8501, but externally accessible on 8502.
+#     ports:
+#       - "{PORT}:8501"
+#     environment:
+#       - PORT=8501  # This must match the internal port used by Streamlit
+#       - LAB_ID={LAB_ID}
+#     restart: always
+# """
 
 docker_file="""# Use Python base image
 FROM python:3.12-slim
@@ -105,12 +105,10 @@ jobs:
       - name: Build Docker image
         run: |
           docker build -t {DOCKER_IMAGE_NAME} .
-          # e.g., docker build -t your-username/streamlit-app:latest .
 
       - name: Push Docker image
         run: |
           docker push {DOCKER_IMAGE_NAME}
-          # e.g., docker push your-username/streamlit-app:latest
 """
 
 
@@ -141,7 +139,7 @@ def generate_lab(lab_id, port, **kwargs):
         model = LiteLLMModel(model_id=os.getenv("AGENT_MODEL"), api_key=os.getenv("AGENT_KEY"))
 
     prompt = PromptHandler().get_prompt("GENERATE_LAB_PROMPT")
-    prompt = prompt.format(LAB_NAME=lab["lab_name"], TECH_SPEC=lab["technical_specifications"], DOCKERFILE=docker_file, DOCKER_COMPOSE=docker_compose_file.format(LAB_ID=lab_id, PORT=port, DOCKERHUB_USERNAME=os.environ.get("DOCKERHUB_USERNAME")))
+    prompt = prompt.format(LAB_NAME=lab["lab_name"], TECH_SPEC=lab["technical_specifications"], DOCKERFILE=docker_file)
 
     code = ""
     # create a tool to write file and filecontent to github
@@ -166,6 +164,7 @@ def generate_lab(lab_id, port, **kwargs):
             {filecontent}
             ```
             """
+        logging.info("Writing file to GitHub:", file)
         
         if upload_file_to_github(lab_id, file, filecontent, f"Add {file}"):
             return True
@@ -182,9 +181,8 @@ def generate_lab(lab_id, port, **kwargs):
     agent.run(prompt)
 
     # write the github action file to the repository
-    write_file_to_github(".github/workflows/build_docker_and_push.yml", github_actions.format(DOCKER_IMAGE_NAME=f"{os.environ.get('DOCKERHUB_USERNAME')}/{lab_id}_streamlit_app"))
+    write_file_to_github(".github/workflows/build_docker_and_push.yml", github_actions.format(DOCKER_IMAGE_NAME=f"{os.environ.get('DOCKERHUB_USERNAME')}/{lab_id}_streamlit_app:latest"))
     write_file_to_github(".gitignore", gitignore_content)
-    write_file_to_github("docker-compose.yml", docker_compose_file.format(LAB_ID=lab_id, PORT=port))
     write_file_to_github(".streamlit/config.toml", streamlit_conf_file.format(LAB_ID=lab_id, PORT=port))
     
 
@@ -653,17 +651,22 @@ def final_task(lab_id, port, **kwargs):
     
     # Update lab status and URLs in MongoDB
     mongodb_client = AtlasClient()
-    lab_url = f"https://qucreate.qusandbox.com/{lab_id}"
+    lab_endpoint = os.environ.get("QULABS_BACKEND_URL")
+    lab_url = f"https://{lab_endpoint}/lab/{lab_id}"
     repo_url = f"https://github.com/{GITHUB_USERNAME}/{lab_id}"
-    documentation_url = f"https://qucreate.qusandbox.com/documentation/{lab_id}/documentation/"
-    user_guide_url = f"https://qucreate.qusandbox.com/documentation/{lab_id}/user_guide/"
+    documentation_url = f"https://{lab_endpoint}/documentation/{lab_id}/documentation/"
+    user_guide_url = f"https://{lab_endpoint}/documentation/{lab_id}/user_guide/"
     mongodb_client.update("lab_design", 
                             filter={"_id": ObjectId(lab_id)}, 
-                            update={"$set": {"status": "Review", 
-                                        "lab_url": lab_url, 
-                                        "repo_url": repo_url,
-                                        "documentation_url": documentation_url,
-                                        "user_guide_url": user_guide_url
+                            update={"$set": {
+                                            "status": "Review", 
+                                            "lab_url": lab_url, 
+                                            "repo_url": repo_url,
+                                            "documentation_url": documentation_url,
+                                            "user_guide_url": user_guide_url,
+                                            "port": port,
+                                            "running_status": "running",
+                                            "docker_image": f"{os.getenv('DOCKERHUB_USERNAME')}/{lab_id}_streamlit_app:latest"
                                         }
                                     }
                             )
@@ -834,129 +837,145 @@ with DAG(
     #              ],
     # )
 
+    # push codelab files to github
+    # 
 
-    pull_remote_command = """
-LAB_ID="{LAB_ID}"
-echo "Pulling repo for lab: $LAB_ID"
+#     pull_remote_command = """
+# LAB_ID="{LAB_ID}"
+# echo "Pulling repo for lab: $LAB_ID"
 
-# Ensure folder exists
-mkdir -p /home/ubuntu/QuLabs
-cd /home/ubuntu/QuLabs
+# # Ensure folder exists
+# mkdir -p /home/ubuntu/QuLabs
+# cd /home/ubuntu/QuLabs
 
-# If you haven't cloned the repo, do so. Otherwise, just pull updates.
-# Adjust the GIT URL to your actual lab repository, or store it in Mongo if each lab has a unique repo.
-if [ ! -d "$LAB_ID" ]; then
-    git clone https://github.com/{GITHUB_USERNAME}/{LAB_ID}.git
-else
-    cd $LAB_ID
-    git pull origin main
-fi
-"""
+# # If you haven't cloned the repo, do so. Otherwise, just pull updates.
+# # Adjust the GIT URL to your actual lab repository, or store it in Mongo if each lab has a unique repo.
+# if [ ! -d "$LAB_ID" ]; then
+#     git clone https://github.com/{GITHUB_USERNAME}/{LAB_ID}.git
+# else
+#     cd $LAB_ID
+#     git pull origin main
+# fi
+# """
 
-    build_pull_repo_command = PythonOperator(
-        task_id="build_pull_repo_command",
-        python_callable=build_command,
-        op_args=[
-            pull_remote_command, 
-            {
-                "LAB_ID": "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
-                "GITHUB_USERNAME": GITHUB_USERNAME
-            }
-        ],
-        provide_context=True
-    )
+#     build_pull_repo_command = PythonOperator(
+#         task_id="build_pull_repo_command",
+#         python_callable=build_command,
+#         op_args=[
+#             pull_remote_command, 
+#             {
+#                 "LAB_ID": "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
+#                 "GITHUB_USERNAME": GITHUB_USERNAME
+#             }
+#         ],
+#         provide_context=True
+#     )
 
 
-    pull_repo_remote = BashOperator(
-        task_id="pull_repo_remote",
-        bash_command="{{ task_instance.xcom_pull(task_ids='build_pull_repo_command') }}",
-        do_xcom_push=True,
-    )
+#     pull_repo_remote = BashOperator(
+#         task_id="pull_repo_remote",
+#         bash_command="{{ task_instance.xcom_pull(task_ids='build_pull_repo_command') }}",
+#         do_xcom_push=True,
+#     )
 
     
-    docker_compose_command = """
-LAB_ID="{LAB_ID}"
-cd /home/ubuntu/QuLabs/$LAB_ID
-sudo docker login
-sudo docker compose pull
-"""
+#     docker_compose_command = """
+# LAB_ID="{LAB_ID}"
+# cd /home/ubuntu/QuLabs/$LAB_ID
+# sudo docker login
+# sudo docker compose pull
+# """
 
-    build_docker_compose_command = PythonOperator(
-        task_id="build_docker_compose_command",
-        python_callable=build_command,
-        op_args=[docker_compose_command, {
-            "LAB_ID": "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
-        }],
-        provide_context=True
-    )
-
-
-    # 3) Docker-compose build
-    docker_compose_build = BashOperator(
-        task_id="docker_compose_build",
-        bash_command="{{ task_instance.xcom_pull(task_ids='build_docker_compose_command') }}",
-        do_xcom_push=True,
-    )
+#     build_docker_compose_command = PythonOperator(
+#         task_id="build_docker_compose_command",
+#         python_callable=build_command,
+#         op_args=[docker_compose_command, {
+#             "LAB_ID": "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
+#         }],
+#         provide_context=True
+#     )
 
 
-    docker_compose_up_command = """
-LAB_ID="{LAB_ID}"
-cd /home/ubuntu/QuLabs/$LAB_ID
-sudo docker compose up -d {LAB_ID}_service
-"""
-
-    build_docker_compose_up_command = PythonOperator(
-        task_id="build_docker_compose_up_command",
-        python_callable=build_command,
-        op_args=[docker_compose_up_command, {
-            "LAB_ID": "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
-        }],
-        provide_context=True
-    )
+#     # 3) Docker-compose build
+#     docker_compose_build = BashOperator(
+#         task_id="docker_compose_build",
+#         bash_command="{{ task_instance.xcom_pull(task_ids='build_docker_compose_command') }}",
+#         do_xcom_push=True,
+#     )
 
 
-    # 4) Docker-compose up
-    docker_compose_up = BashOperator(
-        task_id="docker_compose_up",
-        bash_command="{{ task_instance.xcom_pull(task_ids='build_docker_compose_up_command') }}",
-        do_xcom_push=True,
-    )
+#     docker_compose_up_command = """
+# LAB_ID="{LAB_ID}"
+# cd /home/ubuntu/QuLabs/$LAB_ID
+# sudo docker compose up -d {LAB_ID}_service
+# """
 
-    update_nginx_snippet_command = """
-LAB_ID="{LAB_ID}"
-LAB_PORT={PORT}
-
-echo "Updating Nginx snippet for lab: $LAB_ID on port $LAB_PORT"
-/usr/local/bin/add_lab.sh $LAB_ID $LAB_PORT
-"""
-
-    build_update_nginx_snippet_command = PythonOperator(
-        task_id="build_update_nginx_snippet_command",
-        python_callable=build_command,
-        op_args=[update_nginx_snippet_command, {
-            "LAB_ID": "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
-            "PORT": "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}",
-        }],
-        provide_context=True
-    )
+#     build_docker_compose_up_command = PythonOperator(
+#         task_id="build_docker_compose_up_command",
+#         python_callable=build_command,
+#         op_args=[docker_compose_up_command, {
+#             "LAB_ID": "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
+#         }],
+#         provide_context=True
+#     )
 
 
-    update_nginx_snippet = BashOperator(
-        task_id="update_nginx_snippet",
-        bash_command="{{ task_instance.xcom_pull(task_ids='build_update_nginx_snippet_command') }}",
-        do_xcom_push=True,
-    )
+#     # 4) Docker-compose up
+#     docker_compose_up = BashOperator(
+#         task_id="docker_compose_up",
+#         bash_command="{{ task_instance.xcom_pull(task_ids='build_docker_compose_up_command') }}",
+#         do_xcom_push=True,
+#     )
+
+#     update_nginx_snippet_command = """
+# LAB_ID="{LAB_ID}"
+# LAB_PORT={PORT}
+
+# echo "Updating Nginx snippet for lab: $LAB_ID on port $LAB_PORT"
+# /usr/local/bin/add_lab.sh $LAB_ID $LAB_PORT
+# """
+
+    # build_update_nginx_snippet_command = PythonOperator(
+    #     task_id="build_update_nginx_snippet_command",
+    #     python_callable=build_command,
+    #     op_args=[update_nginx_snippet_command, {
+    #         "LAB_ID": "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
+    #         "PORT": "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}",
+    #     }],
+    #     provide_context=True
+    # )
+
+
+    # update_nginx_snippet = BashOperator(
+    #     task_id="update_nginx_snippet",
+    #     bash_command="{{ task_instance.xcom_pull(task_ids='build_update_nginx_snippet_command') }}",
+    #     do_xcom_push=True,
+    # )
 
     def create_claat_file(lab_id, claat_documentation, user_guide, **kwargs):
         file_path = f"/home/ubuntu/QuLabs/documentation/{lab_id}/documentation.md"
         Path(f"/home/ubuntu/QuLabs/documentation/{lab_id}").mkdir(parents=True, exist_ok=True)
         with open(file_path, "w") as f:
             f.write(claat_documentation)
+
         
         user_guide_path = f"/home/ubuntu/QuLabs/documentation/{lab_id}/user_guide.md"
         Path(f"/home/ubuntu/QuLabs/documentation/{lab_id}").mkdir(parents=True, exist_ok=True)
         with open(user_guide_path, "w") as f:
             f.write(user_guide)
+
+        
+        if upload_file_to_github(lab_id, "documentation.md", claat_documentation, "Add documentation"):
+            logging.info("File documentation.md uploaded successfully!")
+        else:
+            update_file_in_github(lab_id, "documentation.md", claat_documentation, "Update documentation")
+            logging.info("File documentation.md updated successfully!")
+
+        if upload_file_to_github(lab_id, "user_guide.md", user_guide, "Add user guide"):
+            logging.info("File user_guide.md uploaded successfully!")
+        else:
+            update_file_in_github(lab_id, "user_guide.md", user_guide, "Update user guide")
+            logging.info("File user_guide.md updated successfully!")
 
         return file_path
     
@@ -970,43 +989,58 @@ echo "Updating Nginx snippet for lab: $LAB_ID on port $LAB_PORT"
     )
 
 
-    claat_command = """
-export LAB_ID="{LAB_ID}"
-cd /home/ubuntu/QuLabs/documentation/$LAB_ID/
-if [ ! -d "$LAB_ID_documentation" ]; then
-    claat export documentation.md
-else
-    rm -rf $LAB_ID_documentation
-    claat export documentation.md
-fi
-if [ ! -d "$LAB_ID_user_guide" ]; then
-    claat export user_guide.md
-else
-    rm -rf $LAB_ID_user_guide
-    claat export user_guide.md
-fi
+#     claat_command = """
+# export LAB_ID="{LAB_ID}"
+# cd /home/ubuntu/QuLabs/documentation/$LAB_ID/
+# if [ ! -d "$LAB_ID_documentation" ]; then
+#     claat export documentation.md
+# else
+#     rm -rf $LAB_ID_documentation
+#     claat export documentation.md
+# fi
+# if [ ! -d "$LAB_ID_user_guide" ]; then
+#     claat export user_guide.md
+# else
+#     rm -rf $LAB_ID_user_guide
+#     claat export user_guide.md
+# fi
 
-sudo mkdir -p /var/www/codelabs/$LAB_ID
-sudo mkdir -p /var/www/codelabs/$LAB_ID/documentation
-sudo mkdir -p /var/www/codelabs/$LAB_ID/user_guide
+# sudo mkdir -p /var/www/codelabs/$LAB_ID
+# sudo mkdir -p /var/www/codelabs/$LAB_ID/documentation
+# sudo mkdir -p /var/www/codelabs/$LAB_ID/user_guide
 
-sudo cp -r /home/ubuntu/QuLabs/documentation/$LAB_ID/$LAB_ID_documentation/. /var/www/codelabs/$LAB_ID/documentation/
-sudo cp -r /home/ubuntu/QuLabs/documentation/$LAB_ID/$LAB_ID_user_guide/. /var/www/codelabs/$LAB_ID/user_guide/
-"""
+# sudo cp -r /home/ubuntu/QuLabs/documentation/$LAB_ID/$LAB_ID_documentation/. /var/www/codelabs/$LAB_ID/documentation/
+# sudo cp -r /home/ubuntu/QuLabs/documentation/$LAB_ID/$LAB_ID_user_guide/. /var/www/codelabs/$LAB_ID/user_guide/
+# """
 
-    build_claat_command = PythonOperator(
-        task_id="build_claat_command",
-        python_callable=build_command,
-        op_args=[claat_command, {
-            "LAB_ID": "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
-        }],
-        provide_context=True
-    )
+#     build_claat_command = PythonOperator(
+#         task_id="build_claat_command",
+#         python_callable=build_command,
+#         op_args=[claat_command, {
+#             "LAB_ID": "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
+#         }],
+#         provide_context=True
+#     )
 
-    claat_command_step = BashOperator(
-        task_id="claat_command",
-        bash_command="{{ task_instance.xcom_pull(task_ids='build_claat_command') }}",
-        do_xcom_push=True,
+#     claat_command_step = BashOperator(
+#         task_id="claat_command",
+#         bash_command="{{ task_instance.xcom_pull(task_ids='build_claat_command') }}",
+#         do_xcom_push=True,
+#     )
+
+    def register_app(lab_id, port, **kwargs):
+        lab_endpoint = os.environ.get("QULABS_BACKEND_URL")
+        payload = {"lab_id": lab_id, "port":port, "docker_image": f"{os.getenv('DOCKERHUB_USERNAME')}/{lab_id}_streamlit_app:latest"}
+        response = requests.post(f"https://{lab_endpoint}/register-app", json=payload)
+        response.raise_for_status()
+        return response.json()
+    
+    register_app_task = PythonOperator(
+        task_id="register_lab",
+        python_callable=register_app,
+        provide_context=True,
+        op_args=["{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}", 
+                 "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}"]
     )
 
     end = PythonOperator(
@@ -1022,15 +1056,8 @@ sudo cp -r /home/ubuntu/QuLabs/documentation/$LAB_ID/$LAB_ID_user_guide/. /var/w
     generate_lab_task >> \
     get_claat_codelab_task >> \
     get_claat_user_guide_task >> \
-    build_pull_repo_command >> \
-    pull_repo_remote >> \
-    build_docker_compose_command >> \
-    docker_compose_build >> \
-    build_docker_compose_up_command >> \
-    docker_compose_up >> \
-    build_update_nginx_snippet_command >> \
-    update_nginx_snippet >> \
     create_claat_file_task >> \
-    build_claat_command >> \
-    claat_command_step >> \
+    register_app_task >> \
     end
+
+

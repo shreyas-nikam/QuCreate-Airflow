@@ -664,7 +664,7 @@ st.sidebar.divider()
 st.title("QuLab")
 st.divider()
 
-# Code goes here
+# Your code goes here
 
 st.divider()
 st.write("© 2025 QuantUniversity. All Rights Reserved.")

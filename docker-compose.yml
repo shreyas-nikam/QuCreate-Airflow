@@ -1,0 +1,58 @@
+version: '3'
+services:
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+
+  airflow-webserver:
+    build: .
+    command: airflow webserver
+    depends_on:
+      - postgres
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+      - AIRFLOW_HOME=/opt/airflow
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./.env:/opt/airflow/.env
+    restart: always
+
+  airflow-scheduler:
+    build: .
+    command: airflow scheduler
+    depends_on:
+      - postgres
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
+      - AIRFLOW_HOME=/opt/airflow
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./.env:/opt/airflow/.env
+    restart: always
+
+  mongodb-monitor:
+    build: .
+    command: python mongodb_monitor.py
+    depends_on:
+      - airflow-webserver
+    environment:
+      - AIRFLOW_HOME=/opt/airflow
+    volumes:
+      - ./.env:/opt/airflow/.env
+      - ./logs:/opt/airflow/logs
+    restart: always
+
+volumes:
+  postgres_data:
