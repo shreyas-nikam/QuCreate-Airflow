@@ -11,6 +11,9 @@
 
    # Install mermaid.cli globally (requires Node.js / npm):
    npm install -g mermaid.cli
+
+   # Check installation
+   mmdc --version
    ```
 
 2. **Install PostgreSQL (optional for local dev if you want to use Postgres instead of SQLite)**  

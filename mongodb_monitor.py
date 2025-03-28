@@ -23,7 +23,7 @@ COLLECTIONS_TO_DAGS = {
 
 # Airflow REST API Authentication
 AIRFLOW_BASE_URL = "http://localhost:8080/api/v1"
-AIRFLOW_AUTH = ("admin", "admin")  # Replace with your Airflow username/password
+AIRFLOW_AUTH = (os.getenv("AIRFLOW_USERNAME"), os.getenv("AIRFLOW_PASSWORD"))  # Replace with your Airflow username/password
 
 def trigger_airflow_dag(dag_id, entry_id, collection_name):
     """Trigger an Airflow DAG run via REST API."""
