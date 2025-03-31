@@ -126,6 +126,14 @@
 
 ## Deployment Steps
 
+0. Install build dependencies:
+```bash
+sudo apt-get install python3-dev
+sudo apt-get install libpq-dev
+sudo apt-get install build-essential
+pip install psycopg2
+```
+
 1. **Set up PostgreSQL (instead of SQLite)**  
    You may already have installed PostgreSQL (see step above). Next, create a DB & user:  
    ```sql

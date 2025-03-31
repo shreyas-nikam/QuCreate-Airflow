@@ -1,0 +1,31 @@
+apache-airflow
+langchain
+langchain-openai
+llama-index
+pip install botocore
+pip install pathlib
+pip install markdown
+pip install python-pptx
+pip install boto3
+pip install pypandoc
+pip install langchain-community
+pip install google
+pip install bson
+pip install dotenv
+pip install pymongo
+pip install azure-cognitiveservices-speech
+pip install pydantic
+pip install beautifulsoup4
+pip install asyncio
+pip install datetime
+pip install nest_asyncio
+pip install cairosvg
+pip install typing
+pip install Pillow
+pip install pydub
+pip install llama-parse
+pip install uuid
+pip install vimeo
+pip install requests
+pip install google-generativeai
+pip install fitz
