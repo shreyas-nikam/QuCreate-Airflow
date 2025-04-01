@@ -77,6 +77,7 @@ async def _convert_to_pdf(course_id, module_id, slide_link):
     s3_file_manager = S3FileManager()
     slide_key = slide_link.split("amazonaws.com/")[1]
     with open(f"output/{module_id}/slide.pptx", "wb") as file:
+        logging.info(slide_key)
         slide = s3_file_manager.get_object(slide_key)
         file.write(slide["Body"].read())
     Path(f"output/{module_id}").mkdir(parents=True, exist_ok=True)
@@ -235,7 +236,7 @@ async def _update_modules(course_id, course):
                 course["has_chatbot"] = True
                 chatbot_text_complete += result
     
-        if module['selected_labs']:
+        if 'selected_labs' in module:
             for lab_index, lab in enumerate(module['selected_labs']):
                 lab = atlas_client.find("lab_design", filter={"_id": ObjectId(lab)})[0]
                 if lab['status']=='Review':
@@ -277,7 +278,7 @@ async def _update_modules(course_id, course):
     
     course_design['status'] = "Published"
     mongo_client_env.update("course_design", filter={"_id": ObjectId(course_id)}, update={"$set": course_design})
-
+    course['modules'] = modules
     return course
 
 
@@ -417,38 +418,34 @@ def handle_create_course(course_id):
     For all the modules in the publishing queue, update the course objects
     Insert the course object in the courses collection
     Update the course design with the status for the published courses in the course_design collection
-    """
-    try:
-        logging.info(f"Creating course: {course_id}")
+"""
+    logging.info(f"Creating course: {course_id}")
 
-        course = course_object
+    course = course_object
 
-        print(course)
-        course["course_id"] = ObjectId(course_id)
+    print(course)
+    course["course_id"] = ObjectId(course_id)
 
-        course_design = mongo_client_env.find("course_design", filter={"_id": ObjectId(course_id)})[0]
+    course_design = mongo_client_env.find("course_design", filter={"_id": ObjectId(course_id)})[0]
 
-        logging.info("Creating certificate")
+    logging.info("Creating certificate")
 
-        certificate_path = _create_certificate(course_id, course_design["course_name"])
+    certificate_path = _create_certificate(course_id, course_design["course_name"])
 
-        course["certificate_path"] = certificate_path
+    course["certificate_path"] = certificate_path
 
-        if not course_design:
-            return "Course design not found"
+    if not course_design:
+        return "Course design not found"
 
-        course['app_name'] = course_design["course_name"]
-        course["app_image_location"] = course_design["course_image"]
-        course["home_page_introduction"] = course_design["course_outline"]
+    course['app_name'] = course_design["course_name"]
+    course["app_image_location"] = course_design["course_image"]
+    course["home_page_introduction"] = course_design["course_outline"]
 
-        logging.info("Updating modules")
-        course = asyncio.run(_update_modules(course_id, course))
-        course["short_description"] = generate_short_description(course)
-        course["home_page_introduction"] = generate_course_description(course)
+    logging.info("Updating modules")
+    course = asyncio.run(_update_modules(course_id, course))
+    course["short_description"] = generate_short_description(course)
+    course["home_page_introduction"] = generate_course_description(course)
 
-        mongo_client_test.insert("courses", course)
+    mongo_client_test.insert("courses", course)
 
-        return True
-
-    except Exception as e:
-        logging.error(f"Error in creating course: {e}")
+    return True

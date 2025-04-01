@@ -2,7 +2,7 @@
 prompts = {
 
     "CONTENT_TO_QUESTIONS_PROMPT": """
-You are given the content for a module. You need to create {NUM_QUESTIONS} questions from the content.
+You are given the content for a module. You need to create {NUM_QUESTIONS} scenario based questions from the content.
 Each question object should have the following keys: "question", "options", "answer_option", and "explanation".
 All questions should have at least 4 options and the answer must be in one of the options.
 Do not return anything other than the output json.
@@ -362,7 +362,7 @@ Enclose the generated Streamlit code within Python code blocks.
 
 import streamlit as st
 
-st.set_page_config(page_title="QuCreate Streamlit Lab", layout="wide")
+st.set_page_config(page_title="QuLab", layout="wide")
 st.sidebar.image("https://www.quantuniversity.com/assets/img/logo5.jpg")
 st.sidebar.divider()
 st.title("QuLab")
@@ -373,7 +373,7 @@ st.divider()
 st.divider()
 st.write("© 2025 QuantUniversity. All Rights Reserved.")
 st.caption("The purpose of this demonstration is solely for educational use and illustration. "
-           "To access the full legal documentation, please visit this link. Any reproduction of this demonstration "
+           "Any reproduction of this demonstration "
            "requires prior written consent from QuantUniversity.")
 ```
 
@@ -658,7 +658,7 @@ Compulsorily have multiple pages in multiple files for different functionalities
 
 import streamlit as st
 
-st.set_page_config(page_title="QuCreate Streamlit Lab", layout="wide")
+st.set_page_config(page_title="QuLab", layout="wide")
 st.sidebar.image("https://www.quantuniversity.com/assets/img/logo5.jpg")
 st.sidebar.divider()
 st.title("QuLab")
@@ -669,16 +669,14 @@ st.divider()
 st.divider()
 st.write("© 2025 QuantUniversity. All Rights Reserved.")
 st.caption("The purpose of this demonstration is solely for educational use and illustration. "
-           "To access the full legal documentation, please visit this link. Any reproduction of this demonstration "
+           "Any reproduction of this demonstration "
            "requires prior written consent from QuantUniversity.")
 ```
 
 2. Provide comprehensive explanations to users through markdown about visualizations, data, crucial steps, and formulas. 
 Ensure the application is interactive, allowing users to visualize real-time changes in input. 
 Include an array of graphs, images, charts, and other visualizations to enhance interactivity. (Use plotly instead of matplotlib for visualizations)
-3. Generate unit tests for the functionality. Then run the unit tests and check if the generated code passes the tests. If it does not, then modify the code to pass the tests.
-4. Next, generate integration tests for the functionality. Then run the integration tests and check if the generated code passes the tests. If it does not, then modify the code to pass the tests.3. Also add the readme file and requirements.txt file to the repository compulsorily. I have also provided the Dockerfile and docker-compose.yml file for the lab. Only modify installation instructions in them if extra installations (os-level/others) are required other than requirements.txt.
-5. COMPULSORILY add the (modified) dockerfile, requirements.txt, app.py and README.md, the test files and other generated files to the repository using the write_file_to_github tool. The tool requires complete working code.
+5. COMPULSORILY add the (modified) dockerfile, requirements.txt, app.py and README.md and other generated files to the repository using the write_file_to_github tool. The tool requires complete working code.
 6. Validate the generated code before writing it to github for red flags (e.g. destructive commands, suspicious imports, sensitive information, etc.) and write them in markdown on the frontend.
 
 

@@ -134,7 +134,7 @@ def generate_lab(lab_id, port, **kwargs):
         model_id = lab_params["model_id"]
         api_key = lab_params["api_key"]
         if model_id and api_key:
-            model = LiteLLMModel(model_id=model_id, api_key=api_key)
+            model = LiteLLMModel(model_id=os.getenv("AGENT_MODEL"), api_key=os.getenv("AGENT_KEY"))
     else:
         model = LiteLLMModel(model_id=os.getenv("AGENT_MODEL"), api_key=os.getenv("AGENT_KEY"))
 
@@ -142,6 +142,7 @@ def generate_lab(lab_id, port, **kwargs):
     prompt = prompt.format(LAB_NAME=lab["lab_name"], TECH_SPEC=lab["technical_specifications"], DOCKERFILE=docker_file)
 
     code = ""
+    docker_file_pushed = False
     # create a tool to write file and filecontent to github
     @tool
     def write_file_to_github(file: str = "blank.txt", filecontent: str = "") -> bool:
@@ -156,6 +157,7 @@ def generate_lab(lab_id, port, **kwargs):
             bool: True if the file is written successfully.
         """
         nonlocal code
+        nonlocal docker_file_pushed
 
         if file not in ["requirements.txt", "README.md", "Dockerfile", "docker-compose.yml"]:
             code += f"""
@@ -164,7 +166,9 @@ def generate_lab(lab_id, port, **kwargs):
             {filecontent}
             ```
             """
-        logging.info("Writing file to GitHub:", file)
+        if file == "Dockerfile":
+            docker_file_pushed = True
+        logging.info("Writing file to GitHub:\n"+file)
         
         if upload_file_to_github(lab_id, file, filecontent, f"Add {file}"):
             return True
@@ -180,16 +184,41 @@ def generate_lab(lab_id, port, **kwargs):
 
     agent.run(prompt)
 
+    if not docker_file_pushed:
+        write_file_to_github(lab_id, "Dockerfile", docker_file, "Add Dockerfile")
+    
+
+    return code
+   
+def create_github_tag(lab_id, port, **kwargs):
+    owner = os.environ.get("GITHUB_USERNAME")
+    repo = lab_id
+    github_token = os.getenv("GITHUB_TOKEN")
+    branch = "main"
+    
+    def write_file_to_github(file: str = "blank.txt", filecontent: str = "") -> bool:
+        """
+        Write a file to a GitHub repository.
+
+        Args:
+            file: The file path.
+            filecontent: The content to write to the file.
+
+        Returns:
+            bool: True if the file is written successfully.
+        """
+        logging.info("Writing file to GitHub:\n"+file)
+        
+        if upload_file_to_github(lab_id, file, filecontent, f"Add {file}"):
+            return True
+        else:
+            update_file_in_github(lab_id, file, filecontent, f"Update {file}")
+            return True
+    
     # write the github action file to the repository
     write_file_to_github(".github/workflows/build_docker_and_push.yml", github_actions.format(DOCKER_IMAGE_NAME=f"{os.environ.get('DOCKERHUB_USERNAME')}/{lab_id}_streamlit_app:latest"))
     write_file_to_github(".gitignore", gitignore_content)
     write_file_to_github(".streamlit/config.toml", streamlit_conf_file.format(LAB_ID=lab_id, PORT=port))
-    
-
-    owner = GITHUB_USERNAME
-    repo = lab_id
-    github_token = os.getenv("GITHUB_TOKEN")
-    branch = "main"
     
     # Example secrets to add:
     secrets_to_add = {
@@ -223,9 +252,6 @@ def generate_lab(lab_id, port, **kwargs):
 
     # Now create the tag at that latest commit
     create_tag(owner, repo, github_token, tag_name, latest_commit_sha)
-
-    return code
-   
 
 def fetch_details_from_mongo_task(**kwargs):
     """
@@ -342,7 +368,7 @@ def get_streamlit_code(lab_id, **kwargs):
 
     # Format prompt with technical specifications
     streamlit_code_prompt = prompt.format(TECH_SPEC=technical_specifications)
-    logging.info("Updated prompt for generating streamlit code:", streamlit_code_prompt)
+    logging.info("Updated prompt for generating streamlit code:\n"+ streamlit_code_prompt)
     logging.info("================================================================")
 
 
@@ -373,7 +399,7 @@ def get_streamlit_code(lab_id, **kwargs):
         contents=[streamlit_code_prompt]+uploaded_files,
     ).text
 
-    logging.info("Response from Gemini API:", response)
+    logging.info("Response from Gemini API:\n"+ response)
 
     # Clean up code response by removing markdown code blocks
     if "```python" in response:
@@ -390,7 +416,7 @@ def get_streamlit_code(lab_id, **kwargs):
 def get_claat_codelab(lab_id, streamlit_code, **kwargs):
     prompt = PromptHandler().get_prompt("GET_CODELAB_PROMPT")
     codelab_prompt = prompt.format(STREAMLIT_CODE=streamlit_code)
-    logging.info("Updated prompt for generating codelab:", codelab_prompt)
+    logging.info("Updated prompt for generating codelab:"+ codelab_prompt)
     logging.info("================================================================")
 
     response = client.models.generate_content(
@@ -401,7 +427,7 @@ def get_claat_codelab(lab_id, streamlit_code, **kwargs):
     atlas_client = AtlasClient()
     lab = atlas_client.find("lab_design", filter={"_id": ObjectId(lab_id)})[0]
 
-    logging.info("Response from Gemini API:", response)
+    logging.info("Response from Gemini API:\n"+ response)
     
     if "```markdown" in response:
         response = response[response.index("```markdown")+12:response.rindex("```")]
@@ -421,7 +447,7 @@ status: Published
 def get_claat_user_guide(lab_id, streamlit_code, **kwargs):
     prompt = PromptHandler().get_prompt("GET_USER_GUIDE_PROMPT")
     codelab_prompt = prompt.format(STREAMLIT_CODE=streamlit_code)
-    logging.info("Updated prompt for generating codelab:", codelab_prompt)
+    logging.info("Updated prompt for generating codelab:\n"+ codelab_prompt)
     logging.info("================================================================")
 
     response = client.models.generate_content(
@@ -432,7 +458,7 @@ def get_claat_user_guide(lab_id, streamlit_code, **kwargs):
     atlas_client = AtlasClient()
     lab = atlas_client.find("lab_design", filter={"_id": ObjectId(lab_id)})[0]
 
-    logging.info("Response from Gemini API:", response)
+    logging.info("Response from Gemini API:\n"+ response)
     
     if "```markdown" in response:
         response = response[response.index("```markdown")+12:response.rindex("```")]
@@ -479,7 +505,7 @@ def get_requirements_file(streamlit_code, **kwargs):
     # Format the prompt by inserting the Streamlit code
     requirements_prompt = prompt.format(STREAMLIT_APP=streamlit_code)
     # Log the formatted prompt for debugging
-    logging.info("Updated Prompt for requirements file:", requirements_prompt)
+    logging.info("Updated Prompt for requirements file:\n"+ requirements_prompt)
     logging.info("================================================================")
 
     # Generate requirements using Gemini AI model
@@ -489,7 +515,7 @@ def get_requirements_file(streamlit_code, **kwargs):
     ).text
 
     # Log the raw response from Gemini API
-    logging.info("Response from Gemini API:", response)
+    logging.info("Response from Gemini API:\n"+ response)
 
     # Clean up the response by removing markdown code blocks if present
     if "```requirements" in response:
@@ -521,7 +547,7 @@ def get_readme_file(lab_id, streamlit_code, **kwargs):
     readme_prompt = prompt.format(STREAMLIT_APP=streamlit_code)
 
     # Log the formatted prompt for debugging
-    logging.info("Updated prompt for README file:", readme_prompt)
+    logging.info("Updated prompt for README file:\n"+ readme_prompt)
     logging.info("================================================================")
 
 
@@ -536,7 +562,7 @@ def get_readme_file(lab_id, streamlit_code, **kwargs):
         response = response[response.index("```markdown")+12:response.rindex("```")]
 
     # Log the response from Gemini API
-    logging.info("Response from Gemini API:", response)
+    logging.info("Response from Gemini API:\n"+ response)
 
     return response
 
@@ -738,7 +764,7 @@ def failure_callback(context):
             response.raise_for_status()
 
         # Remove failed entry from queue
-        mongodb_client.delete("in_lab_generation_queue", filter={"_id": ObjectId(entry_id)})
+        # mongodb_client.delete("in_lab_generation_queue", filter={"_id": ObjectId(entry_id)})
         logging.info(f"Deleted entry {entry_id} from MongoDB after failure.")
 
 
@@ -951,33 +977,30 @@ with DAG(
     #     bash_command="{{ task_instance.xcom_pull(task_ids='build_update_nginx_snippet_command') }}",
     #     do_xcom_push=True,
     # )
+    
+    create_github_tag_task = PythonOperator(
+        task_id="create_github_tag",
+        python_callable=create_github_tag,
+        provide_context=True,
+        op_args=["{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}",
+                 "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}"]
+    )
+    
 
     def create_claat_file(lab_id, claat_documentation, user_guide, **kwargs):
-        file_path = f"/home/ubuntu/QuLabs/documentation/{lab_id}/documentation.md"
-        Path(f"/home/ubuntu/QuLabs/documentation/{lab_id}").mkdir(parents=True, exist_ok=True)
-        with open(file_path, "w") as f:
-            f.write(claat_documentation)
-
-        
-        user_guide_path = f"/home/ubuntu/QuLabs/documentation/{lab_id}/user_guide.md"
-        Path(f"/home/ubuntu/QuLabs/documentation/{lab_id}").mkdir(parents=True, exist_ok=True)
-        with open(user_guide_path, "w") as f:
-            f.write(user_guide)
-
-        
-        if upload_file_to_github(lab_id, "documentation.md", claat_documentation, "Add documentation"):
+        if upload_file_to_github(lab_id, "documentation.md", claat_documentation, "Added documentation"):
             logging.info("File documentation.md uploaded successfully!")
         else:
-            update_file_in_github(lab_id, "documentation.md", claat_documentation, "Update documentation")
+            update_file_in_github(lab_id, "documentation.md", claat_documentation, "Updated documentation")
             logging.info("File documentation.md updated successfully!")
 
-        if upload_file_to_github(lab_id, "user_guide.md", user_guide, "Add user guide"):
+        if upload_file_to_github(lab_id, "user_guide.md", user_guide, "Added user guide"):
             logging.info("File user_guide.md uploaded successfully!")
         else:
-            update_file_in_github(lab_id, "user_guide.md", user_guide, "Update user guide")
+            update_file_in_github(lab_id, "user_guide.md", user_guide, "Updated user guide")
             logging.info("File user_guide.md updated successfully!")
 
-        return file_path
+        return True
     
     create_claat_file_task = PythonOperator(
         task_id="create_claat_file",
@@ -1028,16 +1051,18 @@ with DAG(
 #         do_xcom_push=True,
 #     )
 
-    def register_app(lab_id, port, **kwargs):
+    def register_lab(lab_id, port, **kwargs):
         lab_endpoint = os.environ.get("QULABS_BACKEND_URL")
         payload = {"lab_id": lab_id, "port":port, "docker_image": f"{os.getenv('DOCKERHUB_USERNAME')}/{lab_id}_streamlit_app:latest"}
-        response = requests.post(f"https://{lab_endpoint}/register-app", json=payload)
+        logging.info("Registering lab with payload:\n"+str(payload))
+        response = requests.post(f"{lab_endpoint}/register_lab", json=payload)
         response.raise_for_status()
+        logging.info("Lab registered successfully!")
         return response.json()
     
-    register_app_task = PythonOperator(
+    register_lab_task = PythonOperator(
         task_id="register_lab",
-        python_callable=register_app,
+        python_callable=register_lab,
         provide_context=True,
         op_args=["{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[0] }}", 
                  "{{ ti.xcom_pull(task_ids='fetch_details_from_mongo')[1] }}"]
@@ -1054,10 +1079,11 @@ with DAG(
 
     fetch_details_from_mongo_step >> \
     generate_lab_task >> \
+    create_github_tag_task >> \
     get_claat_codelab_task >> \
     get_claat_user_guide_task >> \
     create_claat_file_task >> \
-    register_app_task >> \
+    register_lab_task >> \
     end
 
 

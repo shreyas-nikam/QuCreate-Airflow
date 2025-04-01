@@ -43,7 +43,7 @@ class LLM:
             gemini.configure(api_key=os.environ.get("GEMINI_API_KEY"))
             self.llm = gemini.GenerativeModel(model_name="gemini-pro")
 
-    def change_llm_type(self, llm_type):
+    def change_llm_type(self, llm_type, openai_model=os.environ.get("OPENAI_MODEL"), openai_api_key=os.environ.get("OPENAI_KEY")):
         """
         Change the LLM type
 
@@ -52,9 +52,9 @@ class LLM:
         """
         self.llm_type = llm_type
         if llm_type == "chatgpt":
-            self.llm = ChatOpenAI(model=os.environ.get("OPENAI_MODEL"),
+            self.llm = ChatOpenAI(model=openai_model,
                                   temperature=1,
-                                  api_key=os.environ.get("OPENAI_KEY"))
+                                  api_key=openai_api_key)
         elif llm_type == "gemini":
             gemini.configure(api_key=os.environ.get("GEMINI_API_KEY"))
             self.llm = gemini.GenerativeModel(model_name="gemini-pro")

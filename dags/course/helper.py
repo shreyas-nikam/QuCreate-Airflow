@@ -134,21 +134,20 @@ def parse_files(module_id, file_path, download_path):
             md_json_objs = parser.get_json_result(file_path)
             time.sleep(5)
 
-        print("MD Json Objects", md_json_objs)
+        logging.info(md_json_objs)
         json_dicts = md_json_objs[0]["pages"]
 
         image_path_ = str(Path(download_path) / file_base)
-        image_dicts = parser.get_images(md_json_objs, download_path=image_path)
-        print("Image dicts", image_dicts)
+        image_dicts = parser.get_images(md_json_objs, download_path=image_path_)
+        logging.info(image_dicts)
 
         # store all the images in s3
         for index, image_dict in enumerate(image_dicts):
-            image_path = image_dict["image_path"]
-            image = image_dict["image"]
-            key = f"{module_id}/{image_path}"
-            s3.upload_fileobj(image, key)
+            image_path = image_dict["path"]
+            key = f"qu-course-design/{image_path[image_path.index('output/')+7:]}"
+            s3.upload_file(image_path, key)
             link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+key
-            image_dicts[index]["image_path"] = link
+            image_dicts[index]["path"] = link
 
         file_dicts[file_path] = {
             "file_path": full_file_path,
@@ -163,9 +162,12 @@ def parse_files(module_id, file_path, download_path):
         text_nodes = get_text_nodes(json_dicts, file_dict["file_path"])
         all_text_nodes.extend(text_nodes)
         text_nodes_dict[file_path] = text_nodes
-
+        
+    logging.info("All text nodes\n")
+    logging.info(all_text_nodes)
     output_pickle_path = Path("output") / module_id / "text_nodes_pickle.pkl"
     pickle.dump(text_nodes_dict, open(output_pickle_path, "wb"))
+    
 
     logging.info("All text nodes:")
     logging.info(all_text_nodes)
@@ -195,6 +197,8 @@ def load_indexes(module_id):
     summary_indexes = {
         file_path: SummaryIndex(text_nodes_dict[file_path]) for file_path, text_nodes in text_nodes_dict.items()
     }
+    
+    
 
     path = Path("output") / module_id / "vector_index"
     storage_context = StorageContext.from_defaults(persist_dir=path)
@@ -398,14 +402,17 @@ class SlidesGenerationAgent(Workflow):
             [self.chunk_retriever_tool, self.doc_retriever_tool],
             chat_history=chat_history,
         )
-        print("Response from async chat with tools function: ", response)
+        logging.info("Response from async chat with tools function: ")
+        logging.info(response)
         self.memory.put(response.message)
-        print("Memory: ", self.memory.get())
+        logging.info("Memory: ")
+        logging.info(self.memory.get())
 
         tool_calls = self.llm.get_tool_calls_from_response(
             response, error_on_no_tool_call=False
         )
-        print("Tool calls: ", tool_calls)
+        logging.info("Tool calls: ")
+        logging.info(tool_calls)
         if not tool_calls:
             # all the content should be stored in the context, so just pass along input
             return OutputGenerationEvent(input=ev.input)
@@ -458,13 +465,14 @@ class SlidesGenerationAgent(Workflow):
     ) -> StopEvent:
         """Generate the final slide based on the context of the inputs from the retrieval tools."""
         # given all the context, generate query
-        print("Calling the output generation final event")
-        print(ctx.data["query"])
-        print(ctx.data["stored_chunks"])
+        logging.info("Calling the output generation final event")
+        logging.info(ctx.data["query"])
+        logging.info(ctx.data["stored_chunks"])
         response = self.output_gen_summarizer.synthesize(
             ctx.data["query"], nodes=ctx.data["stored_chunks"]
         )
-        print("Response from output generation: ", response)
+        logging.info("Response from output generation: ")
+        logging.info(response)
 
         return StopEvent(result={"response": response})
 
@@ -479,12 +487,14 @@ async def generate_outline(module_id, instructions):
         llm=outline_gen_llm,
     )
     atlas_client = AtlasClient()
-    logging.info("Instructions for outline generation:\n"+instructions)
+    logging.info("Instructions for outline generation:\n")
+    logging.info(instructions)
     response = query_engine.query(instructions)
     response = response.response
     response = response.replace("```markdown", "").replace(
         "```", "").replace("```", "").replace("markdown", "")
-    logging.info("Response for agent's output: "+response)
+    logging.info("Response for agent's output: ")
+    logging.info(response)
 
     return response
 
@@ -545,7 +555,7 @@ def _break_outline(outline):
     prompt = PromptHandler().get_prompt("BREAK_OUTLINE_PROMPT")
     llm = LLM()
     response = llm.get_response(prompt+outline)
-    print(response[response.find("["):response.rfind("]")+1])
+    logging.info(response[response.find("["):response.rfind("]")+1])
     response = json.loads(response[response.find("["):response.rfind("]")+1])
     return response
 
@@ -596,6 +606,6 @@ async def get_module_information(module_id, outline):
     llm = LLM()
     response = llm.get_response(
         prompt+str(outline).replace("{", "{{").replace("}", "}}"))
-    print(response)
+    logging.info(response)
 
     return response
