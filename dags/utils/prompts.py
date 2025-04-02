@@ -318,7 +318,7 @@ How NLP models can automate content such as market commentary, regulatory docume
 Example: JP Morgan's AI applications in creating research reports"]
 
 Input:
-
+{OUTLINE}
 
 """,
 

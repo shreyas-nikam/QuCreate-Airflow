@@ -19,6 +19,7 @@ from llama_parse import LlamaParse
 from pydantic import BaseModel, Field
 
 # Llama index imports
+from langchain.prompts.prompt import PromptTemplate
 import llama_index.core
 from llama_index.core import Settings, StorageContext, SummaryIndex, VectorStoreIndex, load_index_from_storage
 from llama_index.core.llms.function_calling import FunctionCallingLLM
@@ -32,6 +33,7 @@ from llama_index.core.tools import BaseTool, FunctionTool, ToolSelection
 from llama_index.core.workflow import Context, Event, StartEvent, StopEvent, Workflow, step
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.openai import OpenAI
+
 
 # Local imports
 from utils.llm import LLM
@@ -198,8 +200,6 @@ def load_indexes(module_id):
         file_path: SummaryIndex(text_nodes_dict[file_path]) for file_path, text_nodes in text_nodes_dict.items()
     }
     
-    
-
     path = Path("output") / module_id / "vector_index"
     storage_context = StorageContext.from_defaults(persist_dir=path)
     vector_index = load_index_from_storage(
@@ -482,7 +482,8 @@ async def generate_outline(module_id, instructions):
     vector_index, summary_indexes = load_indexes(module_id)
     logging.info("Index loaded")
 
-    query_engine = summary_indexes.as_query_engine(
+    # TODO: this needs to be fixed to get the overview of all the docs
+    query_engine = vector_index.as_query_engine(
         similarity_top_k=5,
         llm=outline_gen_llm,
     )
@@ -505,7 +506,7 @@ def convert_images_to_links(markdown, module_id):
     """
     logging.info("Converting Mermaid code blocks to PNGs")
 
-    markdown_file = open(f"output/{module_id}", "w")
+    markdown_file = open(f"output/content_{module_id}.md", "w")
     markdown_file.write(markdown)
     markdown_file.close()
 
@@ -515,7 +516,7 @@ def convert_images_to_links(markdown, module_id):
     subprocess.run(command, shell=True)
 
     # push all the generated image files in the file_path to s3, and replace the files to s3 links
-    markdown_file = open(f"output/{module_id}", "r")
+    markdown_file = open(f"output/content_{module_id}.md", "r")
     markdown_content = markdown_file.read()
     markdown_file.close()
 
@@ -554,7 +555,8 @@ def _break_outline(outline):
     # return the output as a list
     prompt = PromptHandler().get_prompt("BREAK_OUTLINE_PROMPT")
     llm = LLM()
-    response = llm.get_response(prompt+outline)
+    
+    response = llm.get_response(PromptTemplate(template=prompt, inputs=["OUTLINE"]), inputs={"OUTLINE": outline})
     logging.info(response[response.find("["):response.rfind("]")+1])
     response = json.loads(response[response.find("["):response.rfind("]")+1])
     return response

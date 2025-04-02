@@ -1,7 +1,7 @@
-apache-airflow
-langchain
-langchain-openai
-llama-index
+pip install apache-airflow
+pip install langchain
+pip install langchain-openai
+pip install llama-index
 pip install botocore
 pip install pathlib
 pip install markdown
