@@ -637,7 +637,7 @@ async def generate_outline(module_id, instructions):
     )
 
     outline = agent.run(
-        input="Help me get the outline for the following topic after retrieving relevant information to the following topic from the tools. If the document contains an index with the topic and subtopics listed, prioritize using it. The outline should be in markdown format.\n"+instructions)
+        input="Help me get the outline for the following topic after retrieving relevant information to the following topic from the tools. If the document contains an index with the topic and subtopics listed, prioritize using it. Also compulsorily have some slides with mermaid diagrams and images in the outline depending on the content. There should be at least one mermaid diagram or at least one image. The outline should be in markdown format.\n"+instructions)
     
     outline = outline['response'].response.render()
     outline = outline.replace("```markdown", "").replace("```", "").replace("```", "").replace("markdown", "")
@@ -735,7 +735,7 @@ async def get_slides(module_id, outline, module_name):
 
     for section in sections:
         logging.info("Section: "+section)
-        response = await agent.run(input="Help me get the slide header, slide content (in markdown) and the speaker notes for ONE SLIDE for the following topic after retrieving relevant information to the given topic, building on the previous slides from the tools. The slide header should be short and descriptive. The slide content should be descriptive and have 3-5 bullet points, mermaid diagrams, images, etc as appropriate. Each bullet/diagram/image should at least have 3-5 lines in the speaker notes. Do not have opening comments like 'in this slide...', 'hello...', 'welcome...', etc. in the speaker notes and start directly. Build up on the previous content to have a continuous flow. Previously generated content:\n"+str(slides)+"\n\nNext topic to generate:\n"+section)
+        response = await agent.run(input="Help me get the slide header, slide content (in markdown) and the speaker notes for ONE SLIDE for the following topic after retrieving relevant information to the given topic, building on the previous slides from the tools. The slide header should be short and descriptive. The slide content should be descriptive and have 3-5 bullet points, mermaid diagrams, images, etc as appropriate. If there are mermaid diagrams or images, do not have any other text on the slide. Each bullet/diagram/image should at least have 3-5 lines in the speaker notes. Do not have opening comments like 'in this slide...', 'hello...', 'welcome...', etc. in the speaker notes and start directly. Build up on the previous content to have a continuous flow. Previously generated content:\n"+str(slides)+"\n\nNext topic to generate:\n"+section)
         slide_content = response['response'].response.slide_content
         slide_content = convert_images_to_links(slide_content, module_id)
 

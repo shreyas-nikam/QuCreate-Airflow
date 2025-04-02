@@ -62,6 +62,10 @@ course_object = {
     "has_quiz": False,
     "external_link": "",
     "contact_form_link": "",
+    "explore_questions_file": "",
+    "experience_questions_file": "",
+    "excel_questions_file": "",
+    "questions_file": "",
     "disclaimer": "\nThis course contains content that has been partially or fully generated using artificial intelligence (AI) technology. While every effort has been made to ensure the accuracy and quality of the materials, please note that AI-generated content may not always reflect the latest developments, best practices, or personalized nuances within the field. We encourage you to critically evaluate the information presented and consult additional resources where necessary.\n"
 }
 
@@ -210,6 +214,9 @@ async def _update_modules(course_id, course):
     slide_links, slide_names, video_links = [], [], []
     module_ids, course_module_information = [], []
     questions = {}
+    explore_questions = {}
+    experience_questions = {}
+    excel_questions = {}
     chatbot_text_complete = ""
     s3_file_manager = S3FileManager()
     atlas_client = AtlasClient()
@@ -232,6 +239,12 @@ async def _update_modules(course_id, course):
                 course_module_information.append(result)
             elif resource['resource_type'] == "Assessment" and assessment:
                 questions[module["module_name"]] = assessment
+                if assessment.get("assessment_level") == "explore":
+                    explore_questions[module["module_name"]] = assessment
+                elif assessment.get("assessment_level") == "experience":
+                    experience_questions[module["module_name"]] = assessment
+                elif assessment.get("assessment_level") == "excel":
+                    excel_questions[module["module_name"]] = assessment
             elif resource['resource_type'] == "Chatbot" and result:
                 course["has_chatbot"] = True
                 chatbot_text_complete += result
@@ -260,6 +273,13 @@ async def _update_modules(course_id, course):
     if questions:
         course['has_quiz'] = True
         course["questions_file"] = await _setup_quiz(course_id, questions)
+    if explore_questions:
+        course["explore_questions_file"] = await _setup_quiz(course_id, explore_questions)
+    if experience_questions:
+        course["experience_questions_file"] = await _setup_quiz(course_id, experience_questions)
+    if excel_questions:
+        course["excel_questions_file"] = await _setup_quiz(course_id, excel_questions)
+
 
     # Update course object
     course.update({

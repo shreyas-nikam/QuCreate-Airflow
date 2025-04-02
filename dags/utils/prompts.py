@@ -2,70 +2,101 @@
 prompts = {
 
     "CONTENT_TO_QUESTIONS_PROMPT": """
-You are given the content for a module. You need to create {NUM_QUESTIONS} scenario based questions from the content.
-Each question object should have the following keys: "question", "options", "answer_option", and "explanation".
-All questions should have at least 4 options and the answer must be in one of the options.
-Do not return anything other than the output json.
-Have scenario-based questions. For the scenarios add the context to every question that is generated.
-Have 2-3 questions per scenario.
+You are provided with the content of a training or learning module. Your task is to generate `{NUM_QUESTIONS}` **scenario-based multiple-choice questions** derived from the key concepts and important points in the content.
 
-Instructions:
-The questions must be comprehensive and not superficial.
-The explanations should be detailed.
-The questions should focus on the important points in each part.
-The quesstions should be scenario based.
+### Requirements:
 
+- Organize the questions around **realistic scenarios or case studies**.
+- Each scenario should have **2-3 questions** based on it.
+- The **scenario description must be included in the "question" field** of every question that relates to it.
 
-Sample Questions:
+### Format:
 
-Question: An analyst is valuing an electric utility with a dividend payout ratio of 0.65, a beta of 0.565,
-and an expected earnings growth rate of 0.032. A regression on other electric utilities
-produces the following equation:
-Predicted P/E = 8.57 + (5.38 x dividend payout) + 15.53 x growth) - (0.61 x beta)
-The predicted P/E on the basis of the values of the explanatory variables for the company is
-closest to:
-Options:
-A. 12.2
-B. 15.4
-C. 20.8
-D. 23.1
-Answer: B
-Explanation: The firm's PEG is 18.75 / 15. 32 = 1.22. Given the comparable group median PEG is 0.92, it appears
-that Nuts, Inc. may be overvalued.
+Each question should be a JSON object with the following keys:
+- `"question"`: A full question prompt including the scenario.
+- `"options"`: An array of exactly 4 answer choices.
+- `"answer_option"`: A single letter (`"a"`, `"b"`, `"c"`, or `"d"`) indicating the correct option.
+- `"explanation"`: A detailed explanation of the correct answer.
 
-Question: Nuts, Inc. has a trailing P/E of 18.75 and a 5-year consensus growth rate forecast of
-15.32%. The median PEG, based on leading P/E, for a group of companies comparable in
-risk to Nuts, Inc. is 0.92. The stock appears to be:
-Options:
-A. Overvalued because its PEG ratio is 0.82
-B. Overvalued because its PEG ratio is 1.22
-C. Undervalued because its PEG ratio is 0.82
-D. Undervalued because its PEG ratio is 1.22
-Answer: A
-Explanation: Predicted P/E = 8.57 + (5.38 x 0.65) + (15.53 x 0.032) - (0.61 x 0.56) = 12.2
+Return a list of question objects as a valid JSON array. **Do not include any other text or formatting outside the JSON output.**
+
+### User Level Details:
+{USER_LEVEL_DETAILS}
 
 
-Output format:
+### Sample Questions:
+
+Sana is a backend developer working on a Python Flask web application that connects to a PostgreSQL database. 
+She creates a new PostgreSQL user web_user to handle database interactions securely. 
+After assigning the user to the database, she tries running a migration script that creates tables and inserts default data. 
+However, she encounters several permission-related errors during execution.
+
+Question: What is the first permission web_user must have to successfully create tables in the database?
+
+A. SELECT on all existing tables
+B. USAGE and CREATE on the target schema
+C. INSERT on all tables
+D. LOGIN privilege on the database
+
+Answer option: B
+
+Explanation:
+To create tables within a schema (e.g., public), the user must have both USAGE and CREATE privileges on that schema.
+
+Question: Sana grants web_user the CREATE privilege on the database, but the error persists. What step did she likely forget?
+
+A. Granting DELETE permission on all tables
+B. Granting USAGE on the schema
+C. Re-enabling autocommit in PostgreSQL
+D. Restarting the PostgreSQL server
+
+Answer option: B
+
+Explanation:
+Even with CREATE permission on the database, a user also needs USAGE on the specific schema to access and create objects within it.
+
+Question: After creating the tables, Sana's script fails to insert data. What privilege does web_user need next?
+
+A. CREATE DATABASE
+B. DROP on the schema
+C. INSERT on the relevant tables
+D. TRUNCATE on the database
+
+Answer option: C
+
+Explanation:
+To insert data, the user must have INSERT privileges on the specific tables involved in the operation.
+
+### Output format:
 [
     {{
-        "question": "What is the capital of France?",
-        "options": ["Paris", "London", "New York", "Tokyo"],
-        "answer_option": "a",
-        "explanation": "The capital of France is Paris"
+        "question": "Sana is a backend developer working on a Python Flask web application that connects to a PostgreSQL database. She creates a new PostgreSQL user `web_user` to handle database interactions securely. After assigning the user to the database, she tries running a migration script that creates tables and inserts default data. However, she encounters several permission-related errors during execution.\n\nWhat is the first permission `web_user` must have to successfully create tables in the database?",
+        "options": ["SELECT on all existing tables", "USAGE and CREATE on the target schema", "INSERT on all tables", "LOGIN privilege on the database"],
+        "answer_option": "b",
+        "explanation": "To create tables within a schema (e.g., public), the user must have both USAGE and CREATE privileges on that schema."
     }},
     {{
-        "question": "What is the capital of India?",
-        "options": ["Mumbai", "Kolkata", "Delhi", "Pune"],
+        "question": "Sana is a backend developer working on a Python Flask web application that connects to a PostgreSQL database. She creates a new PostgreSQL user `web_user` to handle database interactions securely. After assigning the user to the database, she tries running a migration script that creates tables and inserts default data. However, she encounters several permission-related errors during execution.\n\nSana grants `web_user` the `CREATE` privilege on the database, but the error persists. What step did she likely forget?",
+        "options": ["Granting DELETE permission on all tables", "Granting USAGE on the schema", "Re-enabling autocommit in PostgreSQL", "Restarting the PostgreSQL server"],
+        "answer_option": "b",
+        "explanation": "Even with CREATE permission on the database, a user also needs USAGE on the specific schema to access and create objects within it."
+    }},
+    {{
+        "question": "Sana is a backend developer working on a Python Flask web application that connects to a PostgreSQL database. She creates a new PostgreSQL user `web_user` to handle database interactions securely. After assigning the user to the database, she tries running a migration script that creates tables and inserts default data. However, she encounters several permission-related errors during execution.\n\nAfter creating the tables, Sana's script fails to insert data. What privilege does `web_user` need next?",
+        "options": ["CREATE DATABASE", "DROP on the schema", "INSERT on the relevant tables", "TRUNCATE on the database"],
         "answer_option": "c",
-        "explanation": "The capital of India is Delhi"
-    }}...
+        "explanation": "To insert data, the user must have INSERT privileges on the specific tables involved in the operation."
+    }}
 ]
+
 
 Do the above for the given content below:
 
-
 Input:
-Content: {CONTENT}
+### Content: 
+
+{CONTENT}
+
 """,
 
 

@@ -258,15 +258,15 @@ def _stitch_videos(module_id, updation_map):
         str(Path(f"{OUTPUT_PATH}/{module_id}/video.mp4")), fps=10)
 
 
-def _get_questions(module_content, num_questions=10):
+def _get_questions(module_content, num_questions=10, user_level_details=""):
     trials = 5
     prompt_handler = PromptHandler()
     llm = LLM()
     while trials > 0:
         try:
-            prompt = PromptTemplate(template=prompt_handler.get_prompt("CONTENT_TO_QUESTIONS_PROMPT"), inputs=["CONTENT", "NUM_QUESTIONS"])
+            prompt = PromptTemplate(template=prompt_handler.get_prompt("CONTENT_TO_QUESTIONS_PROMPT"), inputs=["CONTENT", "NUM_QUESTIONS", "USER_LEVEL_DETAILS"])
             response = llm.get_response(
-                prompt, inputs={"CONTENT": str(module_content).replace("{", "{{").replace("}", "}}"), "NUM_QUESTIONS": num_questions})
+                prompt, inputs={"CONTENT": str(module_content).replace("{", "{{").replace("}", "}}"), "NUM_QUESTIONS": num_questions, "USER_LEVEL_DETAILS": user_level_details})
             try:
                 response = response[response.find("["):response.rfind("]") + 1]
                 return json.loads(response)
@@ -278,18 +278,24 @@ def _get_questions(module_content, num_questions=10):
             continue
 
 
-def _save_questions(questions, module_id):
+def _save_questions(questions, module_id, user_level=""):
     OUTPUT_PATH = "output"
     print(questions)
-    with open(Path(f"{OUTPUT_PATH}/{module_id}/questions.json"), "w", encoding='utf-8') as file:
+    with open(Path(f"{OUTPUT_PATH}/{module_id}/questions{user_level}.json"), "w", encoding='utf-8') as file:
         file.write(json.dumps(questions))
 
 
-def _get_questions_helper(module_content, module_id, chunk_size=20000):
-    overall_questions = {}
+def _get_questions_helper(module_content, module_id, chunk_size=20000, user_level=""):
     logging.info(f"Getting questions for module: {module_id}")
     module_content_json = ast.literal_eval(module_content)
     module_content = ""
+    user_level_mapping = {
+        "": "",
+        "explore": "The learner is a beginner. Keep the language simple and questions clear. Focus on foundational understanding, basic decision-making, and simple real-world use cases. Avoid complex or abstract scenarios.\n\n- Scenarios should be easy to follow and practical.\n- Explanations should be beginner-friendly and written in plain language.\n- Use everyday examples that help relate concepts to familiar situations.",
+        "experience": "The learner is at an intermediate level. Assume they have a working knowledge of the subject. Questions should test their ability to apply concepts in moderately complex scenarios.\n\n- Scenarios should be realistic and relevant to practical applications.\n- Encourage critical thinking and identify common pitfalls or decision points.\n- Explanations should explore not only why the correct answer is right, but why others are wrong.",
+        "excel": "The learner is advanced and capable of handling nuanced, strategic, and multi-layered concepts. Questions should challenge their reasoning, synthesis, and ability to evaluate options in real-world professional settings.\n- Scenarios should be detailed, context-rich, and analytically demanding.\n- Questions may involve trade-offs, ambiguity, or interpretation of technical/system-level behavior.\n- Explanations must be in-depth and reference specific principles or assumptions that justify the answer."
+    }
+
     for slide in module_content_json:
         module_content += slide["slide_content"] + "\n"
 
@@ -300,12 +306,12 @@ def _get_questions_helper(module_content, module_id, chunk_size=20000):
                   for i in range(0, len(text), chunk_size)]
         for chunk in chunks:
             questions.extend(_get_questions(
-                chunk, 10 if len(chunks) == 1 else 5))
+                chunk, 10 if len(chunks) == 1 else 5), user_level_mapping[user_level])
 
         for index, question in enumerate(questions):
             questions[index]["uuid"] = str(uuid.uuid4())
 
-        _save_questions(questions, module_id)
+        _save_questions(questions, module_id, user_level)
     except Exception as e:
         logging.error(f"Error in getting questions for module {module_id}: {e}")
 
@@ -388,13 +394,13 @@ def _generate_video(slide_path, module_id, voice_name):
     _create_videos(module_id)
 
 
-def _generate_assessment(module_id, slide_content):
+def _generate_assessment(module_id, slide_content, level):
     """
     Generate the assessment from the slide content
     """
     try:
         module_content = slide_content
-        _get_questions_helper(module_content, module_id)
+        _get_questions_helper(module_content, module_id, level)
     except Exception as e:
         logging.error(f"Error in generating assessment: {e}")
         return None
@@ -427,11 +433,38 @@ async def _generate_chatbot(slide_content, destination, course_id, module_id):
     return chabot_link
 
 
+def extract_first_frame(video_path, thumbnail_path):
+    cmd = [
+        "ffmpeg",
+        "-i", video_path,
+        "-ss", "00:00:00.000",
+        "-vframes", "1",
+        "-q:v", "2",  # High quality
+        thumbnail_path
+    ]
+    subprocess.run(cmd, check=True)
+    print(f"Extracted first frame to {thumbnail_path}")
+
+def upload_thumbnail(client, video_uri, thumbnail_path):
+    with open(thumbnail_path, "rb") as thumb:
+        response = client.patch(
+            f"{video_uri}/pictures",
+            data={"active": True},
+            files={"file_data": thumb}
+        )
+    if response.status_code == 200:
+        print("Thumbnail set successfully!")
+    else:
+        print("Failed to set thumbnail:", response.content)
+
+
 def upload_video_to_vimeo(video_path, module_name):
     """
     Upload the video to vimeo
     """
     try:
+        thumbnail_path = video_path.replace(".mp4", ".jpg")
+        extract_first_frame(video_path, thumbnail_path)
         logging.info(f"Uploading video to vimeo: {video_path}")
         vimeo_client = vimeo.VimeoClient(
             token=os.getenv("VIMEO_ACCESS_TOKEN"),
@@ -443,7 +476,7 @@ def upload_video_to_vimeo(video_path, module_name):
             'description': 'AI Generated video for the module.',
             'privacy': {
                 'view': 'anybody'
-            }
+            },
         })
 
         while True:
@@ -453,6 +486,8 @@ def upload_video_to_vimeo(video_path, module_name):
                 logging.info("Video uploaded successfully")
                 break
             time.sleep(30)
+
+        upload_thumbnail(vimeo_client, uri, thumbnail_path)
 
         video_id = uri.split("/")[-1]
         return video_id
@@ -472,15 +507,28 @@ async def upload_files(course_id, video_path, assessment_path, chatbot_path, mod
         key = f"qu-course-design/{course_id}/{module_id}/pre_processed_deliverables/"
 
         video_id = upload_video_to_vimeo(video_path, module['module_name'])
-        video_link = f"""<div style="padding:56.25% 0 0 0;position:relative;"><iframe src="https://player.vimeo.com/video/{video_id}?badge=0&amp;autopause=0&amp;player_id=0&amp;app_id=58479" frameborder="0" allow="autoplay; fullscreen; picture-in-picture; clipboard-write; encrypted-media" style="position:absolute;top:0;left:0;width:100%;height:100%;" title="Fundamental Principles of Value Creation"></iframe></div><script src="https://player.vimeo.com/api/player.js"></script>"""
+        video_link = f"""https://player.vimeo.com/video/{video_id}"""
 
         if has_assessment:
             logging.info(f"Uploading assessment to s3 for module: {module_id}")
             assessment_key = key + f"{module_id}_assessment.json"
             await s3_client.upload_file(assessment_path, assessment_key)
+
+            await s3_client.upload_file(
+                assessment_path.replace(".json", "explore.json"), assessment_key.replace(".json", "explore.json"))
+            await s3_client.upload_file(
+                assessment_path.replace(".json", "experience.json"), assessment_key.replace(".json", "experience.json"))
+            await s3_client.upload_file(
+                assessment_path.replace(".json", "excel.json"), assessment_key.replace(".json", "excel.json"))
             assessment_link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+assessment_key
+            explore_assessment_link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+assessment_key.replace(".json", "explore.json")
+            experience_assessment_link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+assessment_key.replace(".json", "experience.json")
+            excel_assessment_link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+assessment_key.replace(".json", "excel.json")
         else:
             assessment_link = ""
+            explore_assessment_link = ""
+            experience_assessment_link = ""
+            excel_assessment_link = ""
 
         if has_chatbot:
             logging.info(f"Uploading chatbot to s3 for module: {module_id}")
@@ -489,14 +537,14 @@ async def upload_files(course_id, video_path, assessment_path, chatbot_path, mod
         else:
             chatbot_link = ""
 
-        return video_link, assessment_link, chatbot_link
+        return video_link, assessment_link, chatbot_link, explore_assessment_link, experience_assessment_link, excel_assessment_link
 
     except Exception as e:
         logging.error(f"Error in uploading files: {e}")
         return None, None, None
 
 
-def update_module_with_deliverables(course_id, module_id, video_link, assessment_link, chatbot_link, has_chatbot, has_assessment, slide_link):
+def update_module_with_deliverables(course_id, module_id, video_link, assessment_link, chatbot_link, has_chatbot, has_assessment, slide_link, explore_assessment_link, experience_assessment_link, excel_assessment_link):
     """
     Update the module with the video, assessment, chatbot links in pre_processed_deliverables
     """
@@ -549,8 +597,36 @@ def update_module_with_deliverables(course_id, module_id, video_link, assessment
                 "resource_link": assessment_link,
                 "resource_name": f"{module_id}_assessment.json",
                 "resource_description": "Assessment generated from the slide content",
-                "resource_id": ObjectId()
+                "resource_id": ObjectId(),
             })
+            if explore_assessment_link!="":
+                module["pre_processed_deliverables"].append({
+                    "resource_type": "Assessment",
+                    "resource_link": explore_assessment_link,
+                    "resource_name": f"{module_id}_assessment_explore.json",
+                    "resource_description": "Assessment generated from the slide content for explore level",
+                    "resource_id": ObjectId(),
+                    "assessment_level": "explore"
+                })
+            if experience_assessment_link!="":
+                module["pre_processed_deliverables"].append({
+                    "resource_type": "Assessment",
+                    "resource_link": experience_assessment_link,
+                    "resource_name": f"{module_id}_assessment_experience.json",
+                    "resource_description": "Assessment generated from the slide content for experience level",
+                    "resource_id": ObjectId(),
+                    "assessment_level": "experience"
+                })
+            if excel_assessment_link!="":
+                module["pre_processed_deliverables"].append({
+                    "resource_type": "Assessment",
+                    "resource_link": excel_assessment_link,
+                    "resource_name": f"{module_id}_assessment_excel.json",
+                    "resource_description": "Assessment generated from the slide content for excel level",
+                    "resource_id": ObjectId(),
+                    "assessment_level": "excel"
+                })
+
 
         if has_chatbot:
             module["pre_processed_deliverables"].append({
