@@ -690,6 +690,30 @@ Dockerfile:
 {DOCKERFILE}
 ```
 """,
+"GET_WELCOME_THANK_YOU_SLIDE_PROMPT": """"
+Get me the welcome and thank you slide's speaker notes for the course module.
+The welcome slide should have the module name, welcome note and a brief of what will be covered in the module.
+The thank you slide should have a thank you note and a brief of what was covered in the module.
+Return a json dictionary for the speaker notes.
+Do not return anything other than the output json.
+
+Input:
+{SLIDES}
+
+Module Name: {MODULE_NAME}
+
+Output format:
+```json
+{
+    "welcome_slide": {
+        "speaker_notes": "welcome speaker notes..."
+    },
+    "thank_you_slide": {
+        "speaker_notes": "thank you speaker notes..."
+    }
+}
+```
+"""
 }
 
 

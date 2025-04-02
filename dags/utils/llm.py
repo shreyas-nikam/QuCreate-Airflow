@@ -70,6 +70,8 @@ class LLM:
         Returns:
         response: str - response from the LLM
         """
+        for input_key in inputs:
+            inputs[input_key] = str(inputs[input_key]).replace("{", "{{").replace("}", "}}")
 
         if self.llm_type == "chatgpt":
             chain = LLMChain(llm=self.llm, prompt=prompt)

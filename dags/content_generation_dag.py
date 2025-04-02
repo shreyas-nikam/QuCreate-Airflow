@@ -52,9 +52,11 @@ def fetch_outline_step(course_id, module_id, **kwargs):
     return outline
 
 
-def generate_slides_step(module_id, outline, **kwargs):
+def generate_slides_step(course_id, module_id, outline, **kwargs):
     logging.info(f"Generating slides for module: {module_id}")
-    slides = asyncio.run(get_slides(module_id, outline))
+    course, module = _get_course_and_module(course_id, module_id)
+    module_name = module.get("module_name")
+    slides = asyncio.run(get_slides(module_id, outline, module_name))
     logging.info(f"Slides generated: {slides}")
     return slides
 
@@ -300,7 +302,9 @@ with DAG(
     generate_slides_task = PythonOperator(
         task_id='generate_slides',
         python_callable=generate_slides_step,
-        op_args=["{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[1] }}",
+        op_args=[
+            "{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[0] }}",
+            "{{ task_instance.xcom_pull(task_ids='fetch_entry_from_mongo')[1] }}",
                  "{{ task_instance.xcom_pull(task_ids='fetch_outline') }}"],
         provide_context=True
     )

@@ -266,7 +266,7 @@ def _get_questions(module_content, num_questions=10):
         try:
             prompt = PromptTemplate(template=prompt_handler.get_prompt("CONTENT_TO_QUESTIONS_PROMPT"), inputs=["CONTENT", "NUM_QUESTIONS"])
             response = llm.get_response(
-                prompt, inputs={"CONTENT": str(module_content), "NUM_QUESTIONS": num_questions})
+                prompt, inputs={"CONTENT": str(module_content).replace("{", "{{").replace("}", "}}"), "NUM_QUESTIONS": num_questions})
             try:
                 response = response[response.find("["):response.rfind("]") + 1]
                 return json.loads(response)

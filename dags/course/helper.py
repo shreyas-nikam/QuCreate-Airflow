@@ -305,7 +305,6 @@ class SlideOutput(BaseModel):
     """Data model for a slide.
 
     Contains slide header, slide_content and the speaker notes for the slide.
-
     """
 
     slide_header: str = Field(..., description="The header for the slide.")
@@ -638,7 +637,7 @@ async def generate_outline(module_id, instructions):
     )
 
     outline = agent.run(
-        input="Help me get the outline for the following topic after retrieving relevant information to the following topic from the tools. The outline should be in markdown format.\n"+instructions)
+        input="Help me get the outline for the following topic after retrieving relevant information to the following topic from the tools. If the document contains an index with the topic and subtopics listed, prioritize using it. The outline should be in markdown format.\n"+instructions)
     
     outline = outline['response'].response.render()
     outline = outline.replace("```markdown", "").replace("```", "").replace("```", "").replace("markdown", "")
@@ -710,7 +709,7 @@ def _break_outline(outline):
     return response
 
 
-async def get_slides(module_id, outline):
+async def get_slides(module_id, outline, module_name):
     logging.info("Loading index")
     vector_index, summary_indexes = load_indexes(module_id)
 
@@ -736,7 +735,7 @@ async def get_slides(module_id, outline):
 
     for section in sections:
         logging.info("Section: "+section)
-        response = await agent.run(input="Help me get the slide header, slide content and the speaker notes for ONE SLIDE for the following topic after retrieving relevant information to the following topic from the tools. The slide header should be short and descriptive. The slide content should be descriptive and have 3-5 bullet points. The speaker notes should be as if presenting the topic on teh slides based on the slide content and should be in a continuous flow.\n"+section)
+        response = await agent.run(input="Help me get the slide header, slide content and the speaker notes for ONE SLIDE for the following topic after retrieving relevant information to the given topic, building on the previous slides from the tools. The slide header should be short and descriptive. The slide content should be descriptive and have 3-5 bullet points, mermaid diagrams, images, etc as appropriate. Each bullet/diagram/image should at least have 3-5 lines in the speaker notes. Do not have opening comments like 'in this slide...', 'hello...', 'welcome...', etc. in the speaker notes and start directly. Build up on the previous content to have a continuous flow. Previously generated content:\n"+str(slides)+"\n\nNext topic to generate:\n"+section)
         slide_content = response['response'].response.slide_content
         slide_content = convert_images_to_links(slide_content, module_id)
 
@@ -744,6 +743,39 @@ async def get_slides(module_id, outline):
             "slide_header": response['response'].response.slide_header,
             "slide_content": slide_content,
             "speaker_notes": response['response'].response.speaker_notes
+        })
+
+        # get the first welcome slide and the last thank you slide for the module.
+        from dags.utils.llm import LLM
+        llm = LLM()
+        prompt = PromptHandler().get_prompt("GET_WELCOME_THANK_YOU_SLIDE_PROMPT")
+        prompt = PromptTemplate(template=prompt, inputs=["SLIDES", "MODULE_NAME"])
+        response = llm.get_response(prompt, inputs={"SLIDES": str(slides), "MODULE_NAME": module_name})
+        welcome_message = ""
+        thank_you_message = ""
+
+        try:
+            response = json.loads(response[response.index("```json")+7:response.rindex("```")])
+            welcome_message = response["welcome_slide"]["speaker_notes"]
+            thank_you_message = response["thank_you_slide"]["speaker_notes"]
+        except:
+            try:
+                response = json.loads(response[response.index("{"):response.rindex("}")+1])
+                welcome_message = response["welcome_slide"]["speaker_notes"]
+                thank_you_message = response["thank_you_slide"]["speaker_notes"]
+            except:
+                logging.info("Error in parsing the welcome and thank you message")
+                welcome_message = "Hello, welcome to the module: "+module_name
+                thank_you_message = "Thank you for completing the module."
+        slides.insert(0, {
+            "slide_header": "",
+            "slide_content": f"# {module_name}",
+            "speaker_notes": welcome_message
+        })
+        slides.append({
+            "slide_header": "",
+            "slide_content": "### Thank you\n\n![Thank you](https://qucoursify.s3.us-east-1.amazonaws.com/qu-skillbridge/last_page.png)",
+            "speaker_notes": thank_you_message
         })
 
     return slides
@@ -755,7 +787,7 @@ async def get_module_information(module_id, outline):
     prompt = PromptHandler().get_prompt("GET_MODULE_INFORMATION_PROMPT")
     llm = LLM()
     response = llm.get_response(
-        prompt+str(outline).replace("{", "{{").replace("}", "}}"))
+        prompt+str(outline))
     logging.info(response)
 
     return response

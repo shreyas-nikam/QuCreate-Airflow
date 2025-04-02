@@ -341,7 +341,8 @@ with DAG(
         def fetch_quiz(term, definition, existing_record):
             scenario_text = existing_record["scenario_description"]
             prompt = PromptTemplate(template=QUIZ_PROMPT, inputs=["TERM", "SCENARIO"])
-            response_str = llm.get_response(prompt, inputs={"TERM":term, "DEFINITION": definition, "SCENARIO":scenario_text}).strip()
+            response_str = llm.get_response(prompt, inputs={"TERM":term, "DEFINITION": definition, "SCENARIO":scenario_text
+                                                            }).strip()
             try:
                 resp_json = json.loads(response_str[response_str.index("```json")+7 : response_str.rindex("```")])
                 return term, resp_json.get("quiz", [])

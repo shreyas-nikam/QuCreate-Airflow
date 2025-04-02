@@ -73,9 +73,8 @@ def _extract_content(module_name, slide_content_key):
         slide_content = json.loads(response["Body"].read())
 
         markdown = f"""
-# {module_name}
 """
-        transcript = ["Hello welcome to the module on " + module_name]
+        transcript = []
 
         for slide in slide_content:
             markdown += f"\n# {slide['slide_header']}\n\n{slide_content}\n\n"
