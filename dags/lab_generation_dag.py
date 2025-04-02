@@ -180,7 +180,7 @@ def generate_lab(lab_id, port, **kwargs):
     tools = [write_file_to_github]
 
     # executor type to be added, does not work yet
-    agent = CodeAgent(model=model, tools=tools, planning_interval=2, additional_authorized_imports=['unittest', 'plotly'])
+    agent = CodeAgent(model=model, tools=tools, additional_authorized_imports=['plotly'])
 
     agent.run(prompt)
 

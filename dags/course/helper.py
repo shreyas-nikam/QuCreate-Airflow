@@ -290,6 +290,16 @@ class OutlineOutput(BaseModel):
         ..., description="A list of text and image blocks."
     )
 
+    def render(self) -> str:
+        """Render the blocks as a string."""
+        rendered = []
+        for block in self.blocks:
+            if isinstance(block, TextBlock):
+                rendered.append(block.text)
+            elif isinstance(block, ImageBlock):
+                rendered.append(f"![diagram]({block.file_path})")
+        return "\n".join(rendered)
+
 
 class SlideOutput(BaseModel):
     """Data model for a slide.
@@ -345,6 +355,136 @@ class DocRetrievalEvent(Event):
 
 class OutputGenerationEvent(Event):
     pass
+
+
+class OutlineGenerationAgent(Workflow):
+    """Outline generation agent. Generates the outline based on the input by first retrieving relevant chunks and documents from the corpus."""
+
+    def __init__(
+        self,
+        chunk_retriever_tool: BaseTool,
+        doc_retriever_tool: BaseTool,
+        llm: FunctionCallingLLM | None = None,
+        sllm: StructuredLLM | None = None,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(**kwargs)
+        self.chunk_retriever_tool = chunk_retriever_tool
+        self.doc_retriever_tool = doc_retriever_tool
+
+        self.llm = llm
+        self.summarizer = CompactAndRefine(llm=self.llm)
+        assert self.llm.metadata.is_function_calling_model
+
+        self.sllm = sllm
+        self.output_gen_summarizer = CompactAndRefine(llm=self.sllm)
+
+        self.memory = ChatMemoryBuffer.from_defaults(llm=llm)
+        self.sources = []
+
+    @step(pass_context=True)
+    async def prepare_chat_history(self, ctx: Context, ev: StartEvent) -> InputEvent:
+        # clear sources
+        self.sources = []
+
+        ctx.data["stored_chunks"] = []
+        ctx.data["query"] = ev.input
+
+        # get user input
+        user_input = ev.input
+        user_msg = ChatMessage(role="user", content=user_input)
+        self.memory.put(user_msg)
+
+        # get chat history
+        chat_history = self.memory.get()
+        return InputEvent(input=chat_history)
+
+    @step(pass_context=True)
+    async def handle_llm_input(
+        self, ctx: Context, ev: InputEvent
+    ) -> ChunkRetrievalEvent | DocRetrievalEvent | OutputGenerationEvent | StopEvent:
+        logging.info("Handling LLM input")
+        chat_history = ev.input
+
+        logging.info("Chat history: "+str(chat_history))
+
+        response = await self.llm.achat_with_tools(
+            [self.chunk_retriever_tool, self.doc_retriever_tool],
+            chat_history=chat_history,
+        )
+        logging.info("Response from async chat with tools function: ")
+        logging.info(response)
+        self.memory.put(response.message)
+        logging.info("Memory: ")
+        logging.info(self.memory.get())
+
+        tool_calls = self.llm.get_tool_calls_from_response(
+            response, error_on_no_tool_call=False
+        )
+        logging.info("Tool calls: ")
+        logging.info(tool_calls)
+        if not tool_calls:
+            # all the content should be stored in the context, so just pass along input
+            return OutputGenerationEvent(input=ev.input)
+
+        for tool_call in tool_calls:
+            if tool_call.tool_name == self.chunk_retriever_tool.metadata.name:
+                return ChunkRetrievalEvent(tool_call=tool_call)
+            elif tool_call.tool_name == self.doc_retriever_tool.metadata.name:
+                return DocRetrievalEvent(tool_call=tool_call)
+            else:
+                return StopEvent(result={"response": "Invalid tool."})
+
+    @step(pass_context=True)
+    async def handle_retrieval(
+        self, ctx: Context, ev: ChunkRetrievalEvent | DocRetrievalEvent
+    ) -> InputEvent:
+        """Handle retrieval.
+
+        Store retrieved chunks, and go back to agent reasoning loop.
+        """
+        logging.info("Handling retrieval")
+        query = ev.tool_call.tool_kwargs["query"]
+        if isinstance(ev, ChunkRetrievalEvent):
+            logging.info("Retrieving chunks")
+            retrieved_chunks = self.chunk_retriever_tool(query).raw_output
+        else:
+            logging.info("Retrieving docs")
+            retrieved_chunks = self.doc_retriever_tool(query).raw_output
+        ctx.data["stored_chunks"].extend(retrieved_chunks)
+
+        # synthesize an answer given the query to return to the LLM.
+        response = self.summarizer.synthesize(query, nodes=retrieved_chunks)
+        self.memory.put(
+            ChatMessage(
+                role="tool",
+                content=str(response),
+                additional_kwargs={
+                    "tool_call_id": ev.tool_call.tool_id,
+                    "name": ev.tool_call.tool_name,
+                },
+            )
+        )
+
+        # send input event back with updated chat history
+        return InputEvent(input=self.memory.get())
+
+    @step(pass_context=True)
+    async def generate_output(
+        self, ctx: Context, ev: OutputGenerationEvent
+    ) -> StopEvent:
+        """Generate the outline based on the context of the inputs from the retrieval tools."""
+        # given all the context, generate query
+        logging.info("Calling the output generation final event")
+        logging.info(ctx.data["query"])
+        logging.info(ctx.data["stored_chunks"])
+        response = self.output_gen_summarizer.synthesize(
+            ctx.data["query"], nodes=ctx.data["stored_chunks"]
+        )
+        logging.info("Response from output generation: ")
+        logging.info(response)
+
+        return StopEvent(result={"response": response})
 
 
 class SlidesGenerationAgent(Workflow):
@@ -482,22 +622,30 @@ async def generate_outline(module_id, instructions):
     vector_index, summary_indexes = load_indexes(module_id)
     logging.info("Index loaded")
 
-    # TODO: this needs to be fixed to get the overview of all the docs
-    query_engine = vector_index.as_query_engine(
-        similarity_top_k=5,
-        llm=outline_gen_llm,
-    )
-    atlas_client = AtlasClient()
-    logging.info("Instructions for outline generation:\n")
-    logging.info(instructions)
-    response = query_engine.query(instructions)
-    response = response.response
-    response = response.replace("```markdown", "").replace(
-        "```", "").replace("```", "").replace("markdown", "")
-    logging.info("Response for agent's output: ")
-    logging.info(response)
+    logging.info("Creating tools")
+    chunk_retriever_tool = FunctionTool.from_defaults(
+        fn=lambda query: chunk_retriever_fn(query, vector_index), name="chunk_retriever")
+    doc_retriever_tool = FunctionTool.from_defaults(fn=lambda query: doc_retriever_fn(
+        query, vector_index, summary_indexes), name="doc_retriever")
 
-    return response
+    agent = OutlineGenerationAgent(
+        chunk_retriever_tool=chunk_retriever_tool,
+        doc_retriever_tool=doc_retriever_tool,
+        llm=outline_gen_llm,
+        sllm=outline_gen_sllm,
+        verbose=True,
+        timeout=360.0,
+    )
+
+    outline = agent.run(
+        input="Help me get the outline for the following topic after retrieving relevant information to the following topic from the tools. The outline should be in markdown format.\n"+instructions)
+    
+    outline = outline['response'].response.render()
+    outline = outline.replace("```markdown", "").replace("```", "").replace("```", "").replace("markdown", "")
+    logging.info("Outline generated: ")
+    logging.info(outline)
+
+    return outline
 
 
 def convert_images_to_links(markdown, module_id):
