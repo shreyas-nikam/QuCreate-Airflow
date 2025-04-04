@@ -278,10 +278,10 @@ def _get_questions(module_content, num_questions=10, user_level_details=""):
             continue
 
 
-def _save_questions(questions, module_id, user_level=""):
+def _save_questions(questions, module_id):
     OUTPUT_PATH = "output"
     print(questions)
-    with open(Path(f"{OUTPUT_PATH}/{module_id}/questions{user_level}.json"), "w", encoding='utf-8') as file:
+    with open(Path(f"{OUTPUT_PATH}/{module_id}/questions.json"), "w", encoding='utf-8') as file:
         file.write(json.dumps(questions))
 
 
@@ -310,8 +310,10 @@ def _get_questions_helper(module_content, module_id, chunk_size=20000, user_leve
 
         for index, question in enumerate(questions):
             questions[index]["uuid"] = str(uuid.uuid4())
+            questions[index]['level'] = user_level
+            questions[index]['module_id'] = module_id
 
-        _save_questions(questions, module_id, user_level)
+        return questions
     except Exception as e:
         logging.error(f"Error in getting questions for module {module_id}: {e}")
 
@@ -394,13 +396,23 @@ def _generate_video(slide_path, module_id, voice_name):
     _create_videos(module_id)
 
 
-def _generate_assessment(module_id, slide_content, level):
+def _generate_assessment(module_id, slide_content, explore, experience, excel):
     """
     Generate the assessment from the slide content
     """
     try:
         module_content = slide_content
-        _get_questions_helper(module_content, module_id, level)
+        all_questions = []
+        if explore:
+            questions = _get_questions_helper(module_content, module_id, "explore")
+            all_questions.extend(questions)
+        if experience:
+            questions = _get_questions_helper(module_content, module_id, "experience")
+            all_questions.extend(questions)
+        if excel:
+            questions = _get_questions_helper(module_content, module_id, "excel")
+            all_questions.extend(questions)
+        _save_questions(all_questions, module_id)
     except Exception as e:
         logging.error(f"Error in generating assessment: {e}")
         return None
@@ -496,7 +508,7 @@ def upload_video_to_vimeo(video_path, module_name):
         return None
 
 
-async def upload_files(course_id, video_path, assessment_path, chatbot_path, module_id, has_assessment, has_chatbot):
+async def upload_files(course_id, video_path, assessment_path, chatbot_path, module_id, has_quiz, has_chatbot):
     """
     Upload the video, assessment file, chatbot to s3
     """
@@ -509,26 +521,14 @@ async def upload_files(course_id, video_path, assessment_path, chatbot_path, mod
         video_id = upload_video_to_vimeo(video_path, module['module_name'])
         video_link = f"""https://player.vimeo.com/video/{video_id}"""
 
-        if has_assessment:
+        if has_quiz:
             logging.info(f"Uploading assessment to s3 for module: {module_id}")
             assessment_key = key + f"{module_id}_assessment.json"
             await s3_client.upload_file(assessment_path, assessment_key)
 
-            await s3_client.upload_file(
-                assessment_path.replace(".json", "explore.json"), assessment_key.replace(".json", "explore.json"))
-            await s3_client.upload_file(
-                assessment_path.replace(".json", "experience.json"), assessment_key.replace(".json", "experience.json"))
-            await s3_client.upload_file(
-                assessment_path.replace(".json", "excel.json"), assessment_key.replace(".json", "excel.json"))
             assessment_link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+assessment_key
-            explore_assessment_link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+assessment_key.replace(".json", "explore.json")
-            experience_assessment_link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+assessment_key.replace(".json", "experience.json")
-            excel_assessment_link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+assessment_key.replace(".json", "excel.json")
         else:
             assessment_link = ""
-            explore_assessment_link = ""
-            experience_assessment_link = ""
-            excel_assessment_link = ""
 
         if has_chatbot:
             logging.info(f"Uploading chatbot to s3 for module: {module_id}")
@@ -537,14 +537,14 @@ async def upload_files(course_id, video_path, assessment_path, chatbot_path, mod
         else:
             chatbot_link = ""
 
-        return video_link, assessment_link, chatbot_link, explore_assessment_link, experience_assessment_link, excel_assessment_link
+        return video_link, assessment_link, chatbot_link
 
     except Exception as e:
         logging.error(f"Error in uploading files: {e}")
         return None, None, None
 
 
-def update_module_with_deliverables(course_id, module_id, video_link, assessment_link, chatbot_link, has_chatbot, has_assessment, slide_link, explore_assessment_link, experience_assessment_link, excel_assessment_link):
+def update_module_with_deliverables(course_id, module_id, video_link, assessment_link, chatbot_link, has_chatbot, has_quiz, slide_link):
     """
     Update the module with the video, assessment, chatbot links in pre_processed_deliverables
     """
@@ -591,7 +591,7 @@ def update_module_with_deliverables(course_id, module_id, video_link, assessment
             "resource_id": ObjectId()
         })
 
-        if has_assessment:
+        if has_quiz:
             module["pre_processed_deliverables"].append({
                 "resource_type": "Assessment",
                 "resource_link": assessment_link,
@@ -599,33 +599,6 @@ def update_module_with_deliverables(course_id, module_id, video_link, assessment
                 "resource_description": "Assessment generated from the slide content",
                 "resource_id": ObjectId(),
             })
-            if explore_assessment_link!="":
-                module["pre_processed_deliverables"].append({
-                    "resource_type": "Assessment",
-                    "resource_link": explore_assessment_link,
-                    "resource_name": f"{module_id}_assessment_explore.json",
-                    "resource_description": "Assessment generated from the slide content for explore level",
-                    "resource_id": ObjectId(),
-                    "assessment_level": "explore"
-                })
-            if experience_assessment_link!="":
-                module["pre_processed_deliverables"].append({
-                    "resource_type": "Assessment",
-                    "resource_link": experience_assessment_link,
-                    "resource_name": f"{module_id}_assessment_experience.json",
-                    "resource_description": "Assessment generated from the slide content for experience level",
-                    "resource_id": ObjectId(),
-                    "assessment_level": "experience"
-                })
-            if excel_assessment_link!="":
-                module["pre_processed_deliverables"].append({
-                    "resource_type": "Assessment",
-                    "resource_link": excel_assessment_link,
-                    "resource_name": f"{module_id}_assessment_excel.json",
-                    "resource_description": "Assessment generated from the slide content for excel level",
-                    "resource_id": ObjectId(),
-                    "assessment_level": "excel"
-                })
 
 
         if has_chatbot:

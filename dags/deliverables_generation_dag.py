@@ -44,14 +44,14 @@ def get_entry_from_mongo_step(entry_id, **kwargs):
     course_id = entry[0].get("course_id")
     module_id = entry[0].get("module_id")
     voice_name = entry[0].get("voice_name")
-    has_chatbot = entry[0].get("chatbot")
+    has_chatbot = entry[0].get("has_chatbot")
 
     course, module = _get_course_and_module(course_id, module_id)
-    has_assessment = module.get("assessment")
-    has_explore_assessment = module.get("explore_assessment") if "explore_assessment" in module else False
-    has_experience_assessment = module.get("experience_assessment") if "experience_assessment" in module else False
-    has_excel_assessment = module.get("excel_assessment") if "excel_assessment" in module else False
-    return course_id, module_id, voice_name, has_assessment, has_chatbot, has_explore_assessment, has_experience_assessment, has_excel_assessment
+    has_quiz = module.get("has_quiz")
+    has_explore_assessment = module.get("has_explore_assessment") if "has_explore_assessment" in module else False
+    has_experience_assessment = module.get("has_experience_assessment") if "has_experience_assessment" in module else False
+    has_excel_assessment = module.get("has_excel_assessment") if "has_excel_assessment" in module else False
+    return course_id, module_id, voice_name, has_quiz, has_chatbot, has_explore_assessment, has_experience_assessment, has_excel_assessment
 
 
 def get_resources_link_step(course_id, module_id, **kwargs):
@@ -95,21 +95,11 @@ def create_videos_step(module_id, **kwargs):
 
 
 def generate_assessment_step(slide_content, module_id, has_explore_assessment, has_experience_assessment, has_excel_assessment, **kwargs):
-    _generate_assessment(module_id, slide_content, "")
     assessment_file_path = ""
-    explore_assessment_file_path = ""
-    experience_assessment_file_path = ""
-    excel_assessment_file_path = ""
-    if has_explore_assessment:
-        _generate_assessment(module_id, slide_content, "explore")
-        explore_assessment_file_path = f"output/{module_id}/questionsexplore.json"
-    if has_experience_assessment:
-        _generate_assessment(module_id, slide_content, "experience")
-        experience_assessment_file_path = f"output/{module_id}/questionsexperience.json"
-    if has_excel_assessment:
-        _generate_assessment(module_id, slide_content, "excel")
-        excel_assessment_file_path = f"output/{module_id}/questionsexcel.json"
-    return assessment_file_path, explore_assessment_file_path, experience_assessment_file_path, excel_assessment_file_path
+    assessment_file_path = f"output/{module_id}/questions.json"
+    _generate_assessment(module_id, slide_content, has_explore_assessment, has_experience_assessment, has_excel_assessment)
+    #TODO change the paths in this step to a single one
+    return assessment_file_path
 
 
 def generate_chatbot_step(slide_content, course_id, module_id, **kwargs):
@@ -119,15 +109,15 @@ def generate_chatbot_step(slide_content, course_id, module_id, **kwargs):
     return chatbot_link
 
 
-def upload_files_step(course_id, video_path, assessment_file_path, chatbot_file_path, has_assessment, has_chatbot, module_id, **kwargs):
-    video_link, assessment_link, chatbot_link, explore_assessment_link, experience_assessment_link, excel_assessment_link = asyncio.run(upload_files(
-        course_id, video_path, assessment_file_path, chatbot_file_path, module_id, has_assessment, has_chatbot))
-    return video_link, assessment_link, chatbot_link, explore_assessment_link, experience_assessment_link, excel_assessment_link
+def upload_files_step(course_id, video_path, assessment_file_path, chatbot_file_path, has_quiz, has_chatbot, module_id, **kwargs):
+    video_link, assessment_link, chatbot_link = asyncio.run(upload_files(
+        course_id, video_path, assessment_file_path, chatbot_file_path, module_id, has_quiz, has_chatbot))
+    return video_link, assessment_link, chatbot_link
 
 
-def update_module_with_deliverables_step(course_id, module_id, video_link, assessment_link, chatbot_link, has_chatbot, has_assessment, slide_link, explore_assessment_link, experience_assessment_link, excel_assessment_link, **kwargs):
+def update_module_with_deliverables_step(course_id, module_id, video_link, assessment_link, chatbot_link, has_chatbot, has_quiz, slide_link, **kwargs):
     update_module_with_deliverables(course_id, module_id, video_link,
-                                    assessment_link, chatbot_link, has_chatbot, has_assessment, slide_link,explore_assessment_link, experience_assessment_link, excel_assessment_link)
+                                    assessment_link, chatbot_link, has_chatbot, has_quiz, slide_link,)
     return "Module updated with deliverables"
 
 
@@ -257,14 +247,14 @@ with DAG(
         entry_data = ti.xcom_pull(task_ids='get_entry_from_mongo')
 
         # Extract necessary fields
-        _, _, _, has_assessment, has_chatbot = entry_data
+        course_id, module_id, voice_name, has_quiz, has_chatbot, has_explore_assessment, has_experience_assessment, has_excel_assessment = entry_data
 
         # Determine the next tasks dynamically
         next_tasks = []
-        if has_assessment and has_chatbot:
+        if has_quiz and has_chatbot:
             next_tasks.append("generate_assessment")
             next_tasks.append("generate_chatbot")
-        elif has_assessment:
+        elif has_quiz:
             next_tasks.append("generate_assessment")
         elif has_chatbot:
             next_tasks.append("generate_chatbot")
@@ -361,11 +351,8 @@ with DAG(
         op_args=[
             "{{ task_instance.xcom_pull(task_ids='get_entry_from_mongo')[0] }}",
             "{{ task_instance.xcom_pull(task_ids='create_videos') }}",
-            "{{ task_instance.xcom_pull(task_ids='generate_assessment')[0] if task_instance.xcom_pull(task_ids='generate_assessment') else '' }}",
+            "{{ task_instance.xcom_pull(task_ids='generate_assessment') if task_instance.xcom_pull(task_ids='generate_assessment') else '' }}",
             "{{ task_instance.xcom_pull(task_ids='generate_chatbot') if task_instance.xcom_pull(task_ids='generate_chatbot') else '' }}",
-            "{{ task_instance.xcom_pull(task_ids='get_entry_from_mongo')[3] }}",
-            "{{ task_instance.xcom_pull(task_ids='get_entry_from_mongo')[4] }}",
-            "{{ task_instance.xcom_pull(task_ids='get_entry_from_mongo')[1] }}"
         ],
         provide_context=True
     )
@@ -381,9 +368,6 @@ with DAG(
                  "{{ task_instance.xcom_pull(task_ids='get_entry_from_mongo')[4] }}",
                  "{{ task_instance.xcom_pull(task_ids='get_entry_from_mongo')[3] }}",
                  "{{ task_instance.xcom_pull(task_ids='get_resources_link')[0] }}",
-                    "{{ task_instance.xcom_pull(task_ids='upload_files')[3] }}",
-                    "{{ task_instance.xcom_pull(task_ids='upload_files')[4] }}",
-                    "{{ task_instance.xcom_pull(task_ids='upload_files')[5] }}"
                  ],
         provide_context=True
     )

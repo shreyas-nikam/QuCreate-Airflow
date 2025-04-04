@@ -34,7 +34,6 @@ from llama_index.core.workflow import Context, Event, StartEvent, StopEvent, Wor
 from llama_index.embeddings.openai import OpenAIEmbedding
 from llama_index.llms.openai import OpenAI
 
-
 # Local imports
 from utils.llm import LLM
 from utils.mongodb_client import AtlasClient
@@ -147,7 +146,7 @@ def parse_files(module_id, file_path, download_path):
         for index, image_dict in enumerate(image_dicts):
             image_path = image_dict["path"]
             key = f"qu-course-design/{image_path[image_path.index('output/')+7:]}"
-            s3.upload_file(image_path, key)
+            asyncio.run(s3.upload_png_image(image_path, key))
             link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+key
             image_dicts[index]["path"] = link
 
@@ -313,6 +312,13 @@ class SlideOutput(BaseModel):
                                description="The speaker notes for the slide.")
 
 
+class MultiSlidesOutput(BaseModel):
+    """
+    Data model for multiple slides (to allow breaking one topic into multiple slides).
+    Each slide is a SlideOutput.
+    """
+    slides: List[SlideOutput] = Field(..., description="List of slides.")
+
 class ModuleInformationOutput(BaseModel):
     """Data model for module information.
 
@@ -335,7 +341,7 @@ slide_gen_llm = OpenAI(model=os.getenv("OPENAI_MODEL"),
 module_information_gen_llm = OpenAI(model=os.getenv("OPENAI_MODEL"), system_prompt=module_information_system_prompt, api_key=OPENAI_KEY)
 
 outline_gen_sllm = llm.as_structured_llm(output_cls=OutlineOutput)
-slide_gen_sllm = llm.as_structured_llm(output_cls=SlideOutput)
+slide_gen_sllm = llm.as_structured_llm(output_cls=MultiSlidesOutput)
 module_information_gen_sllm = llm.as_structured_llm(
     output_cls=ModuleInformationOutput)
 
@@ -622,24 +628,81 @@ async def generate_outline(module_id, instructions):
     logging.info("Index loaded")
 
     logging.info("Creating tools")
-    chunk_retriever_tool = FunctionTool.from_defaults(
-        fn=lambda query: chunk_retriever_fn(query, vector_index), name="chunk_retriever")
-    doc_retriever_tool = FunctionTool.from_defaults(fn=lambda query: doc_retriever_fn(
-        query, vector_index, summary_indexes), name="doc_retriever")
+    # chunk_retriever_tool = FunctionTool.from_defaults(
+    #     fn=lambda query: chunk_retriever_fn(query, vector_index), name="chunk_retriever")
+    # doc_retriever_tool = FunctionTool.from_defaults(fn=lambda query: doc_retriever_fn(
+    #     query, vector_index, summary_indexes), name="doc_retriever")
 
-    agent = OutlineGenerationAgent(
-        chunk_retriever_tool=chunk_retriever_tool,
-        doc_retriever_tool=doc_retriever_tool,
-        llm=outline_gen_llm,
-        sllm=outline_gen_sllm,
-        verbose=True,
-        timeout=360.0,
-    )
-
-    outline = agent.run(
-        input="Help me get the outline for the following topic after retrieving relevant information to the following topic from the tools. If the document contains an index with the topic and subtopics listed, prioritize using it. Also compulsorily have some slides with mermaid diagrams and images in the outline depending on the content. There should be at least one mermaid diagram or at least one image. The outline should be in markdown format.\n"+instructions)
+    from smolagents import CodeAgent, LiteLLMModel, tool, DuckDuckGoSearchTool
     
-    outline = outline['response'].response.render()
+    @tool
+    def chunk_retriever_tool_for_codeagent(query: str) -> List[NodeWithScore]:
+        """Retrieves a small set of relevant document chunks from the corpus.
+
+        ONLY use for research questions that want to look up specific facts from the knowledge corpus,
+        and don't need entire documents.
+        
+        Args:
+            query (str): The query to retrieve the chunks for.
+        Returns:
+            List[NodeWithScore]: The list of retrieved chunks.
+        """
+        retriever = vector_index.as_retriever(similarity_top_k=5)
+        nodes = retriever.retrieve(query)
+        return nodes      
+    
+    @tool
+    def doc_retriever_tool_for_codeagent(query: str) -> List[NodeWithScore]:
+        """Document retriever that retrieves entire documents from the corpus.
+
+        ONLY use for research questions that may require searching over entire research reports.
+
+        Will be slower and more expensive than chunk-level retrieval but may be necessary.
+        
+        Args:
+            query (str): The query to retrieve the documents for.
+        Returns:
+            List[NodeWithScore]: The list of retrieved documents.
+        """
+        retriever = vector_index.as_retriever(similarity_top_k=5)
+        nodes = retriever.retrieve(query)
+        return _get_document_nodes(nodes, summary_indexes)
+    
+    tools = [
+        chunk_retriever_tool_for_codeagent,
+        doc_retriever_tool_for_codeagent,
+        DuckDuckGoSearchTool()
+    ]
+    
+    model = LiteLLMModel(model_id=os.getenv("AGENT_MODEL"), api_key=os.getenv("AGENT_KEY"))
+    agent = CodeAgent(model=model, tools=tools)
+    
+    response = agent.run(
+        "Help me get the outline for the following topic after retrieving relevant information to the following topic from the tools. If the document contains an index with the topic and subtopics listed, prioritize using it. Also compulsorily have some slides with mermaid diagrams and images in the outline depending on the content. There should be at least one mermaid diagram or at least one image. The outline should be in markdown format.\n"+instructions
+    )
+    
+    logging.info("Outline generated: ")
+    logging.info(response)
+    
+    outline = response  
+    outline = convert_mermaid_diagrams_to_links(outline, module_id)
+    logging.info("Outline generated: ")
+    
+    # agent = OutlineGenerationAgent(
+    #     chunk_retriever_tool=chunk_retriever_tool,
+    #     doc_retriever_tool=doc_retriever_tool,
+    #     llm=outline_gen_llm,
+    #     sllm=outline_gen_sllm,
+    #     verbose=True,
+    #     timeout=360.0,
+    # )
+
+    # outline = await agent.run(
+    #     input="Help me get the outline for the following topic after retrieving relevant information to the following topic from the tools. If the document contains an index with the topic and subtopics listed, prioritize using it. Also compulsorily have some slides with mermaid diagrams and images in the outline depending on the content. There should be at least one mermaid diagram or at least one image. The outline should be in markdown format.\n"+instructions)
+    # logging.info("Outline generated: ")
+    # logging.info(outline)
+    
+    # outline = outline['response'].response.render()
     outline = outline.replace("```markdown", "").replace("```", "").replace("```", "").replace("markdown", "")
     logging.info("Outline generated: ")
     logging.info(outline)
@@ -647,24 +710,28 @@ async def generate_outline(module_id, instructions):
     return outline
 
 
-def convert_images_to_links(markdown, module_id):
+def convert_mermaid_diagrams_to_links(markdown, module_id):
     """
     Convert Mermaid code blocks in Markdown to PNGs and replace them with image links.
     """
     logging.info("Converting Mermaid code blocks to PNGs")
-
-    markdown_file = open(f"output/content_{module_id}.md", "w")
-    markdown_file.write(markdown)
+    import uuid
+    unique_id = str(uuid.uuid4())
+    markdown_file_name = f"output/{module_id}/{unique_id}.md"
+    markdown_file = open(markdown_file_name, "w")
+    markdown =  re.sub(r'\n{3,}', '\n\n', markdown).strip()
+    markdown_file.write(markdown.replace("<br />", "\n"))
     markdown_file.close()
+    markdown_file_abs_path = os.path.abspath(markdown_file_name)
+    logging.info(f"Running command: npx -p @mermaid-js/mermaid-cli -p puppeteer mmdc -i {markdown_file_abs_path} -o {markdown_file_abs_path} --outputFormat=png")
+    command = f"npx --yes -p @mermaid-js/mermaid-cli -p puppeteer mmdc -i {markdown_file_abs_path} -o {markdown_file_abs_path} --outputFormat=png --scale 5"
 
-    logging.info(f"Running command: npx -p @mermaid-js/mermaid-cli mmdc -i {markdown_file} -o {markdown_file} --outputFormat=png")
-    command = f"npx -p @mermaid-js/mermaid-cli mmdc -i {markdown_file} -o {markdown_file} --outputFormat=png"
-
-    subprocess.run(command, shell=True)
+    response = subprocess.run(command, shell=True, capture_output=True, text=True, check=True)
+    logging.info("Response from command: "+str(response))
 
     # push all the generated image files in the file_path to s3, and replace the files to s3 links
-    markdown_file = open(f"output/content_{module_id}.md", "r")
-    markdown_content = markdown_file.read()
+    markdown_file = open(markdown_file_name, "r")
+    markdown_content = markdown_file.readlines()
     markdown_file.close()
 
     logging.info("Original File")
@@ -673,25 +740,21 @@ def convert_images_to_links(markdown, module_id):
     s3 = S3FileManager()
 
     rewritten_markdown_content = []
+    to_be_deleted_files = []
     # if line startswith ![diagram](./output-svg, replace it with ![diagram](s3 link)
     for line in markdown_content:
-        if line.startswith("![diagram](./output-svg"):
-            file_path = line.split("(")[1].split(")")[0]
+        if line.startswith("![diagram]"):
+            file_name = line.split("(")[1].split(")")[0][2:]
+            file_path = f"output/{module_id}/" + file_name
             logging.info("File path (mermaid): "+file_path)
             key = "qucoursify/qu-course-design/"+module_id+"/slides/"+file_path
-            s3.upload_file(file_path, key)
-            link = "https://qucoursify.s3.us-east-1.amazonaws.com/qu-course-design/"+"/"+module_id+"/slides/"+file_path
-            rewritten_markdown_content.append(f"![diagram]({link})")
-        elif line.startswith("!["):
-            file_path = module_id+"/"+line.split("(")[1].split(")")[0]
-            logging.info("File path (image): "+file_path)
-            key = "qucoursify/qu-course-design/"+module_id+"/slides/"+file_path
-            s3.upload_file(file_path, key)
-            link = "https://qucoursify.s3.us-east-1.amazonaws.com/qu-course-design/"+"/"+module_id+"/slides/"+file_path
-            rewritten_markdown_content.append(f"![diagram]({link})")
+            asyncio.run(s3.upload_png_image(file_path, key))
+            link = "https://qucoursify.s3.us-east-1.amazonaws.com/"+key
+            logging.info("Link: "+link)
+            rewritten_markdown_content.append(f"![]({link})")
         else:
-            rewritten_markdown_content.append(line)
-
+            rewritten_markdown_content.append(line.strip())
+    
 
     return "\n".join(rewritten_markdown_content)
 
@@ -718,7 +781,8 @@ async def get_slides(module_id, outline, module_name):
         fn=lambda query: chunk_retriever_fn(query, vector_index), name="chunk_retriever")
     doc_retriever_tool = FunctionTool.from_defaults(fn=lambda query: doc_retriever_fn(
         query, vector_index, summary_indexes), name="doc_retriever")
-
+   
+    
     agent = SlidesGenerationAgent(
         chunk_retriever_tool=chunk_retriever_tool,
         doc_retriever_tool=doc_retriever_tool,
@@ -735,48 +799,99 @@ async def get_slides(module_id, outline, module_name):
 
     for section in sections:
         logging.info("Section: "+section)
-        response = await agent.run(input="Help me get the slide header, slide content (in markdown) and the speaker notes for ONE SLIDE for the following topic after retrieving relevant information to the given topic, building on the previous slides from the tools. The slide header should be short and descriptive. The slide content should be descriptive and have 3-5 bullet points, mermaid diagrams, images, etc as appropriate. If there are mermaid diagrams or images, do not have any other text on the slide. Each bullet/diagram/image should at least have 3-5 lines in the speaker notes. Do not have opening comments like 'in this slide...', 'hello...', 'welcome...', etc. in the speaker notes and start directly. Build up on the previous content to have a continuous flow. Previously generated content:\n"+str(slides)+"\n\nNext topic to generate:\n"+section)
-        slide_content = response['response'].response.slide_content
-        slide_content = convert_images_to_links(slide_content, module_id)
+        previous_slides = slides[-3:] if len(slides) > 3 else slides
+        prompt_for_section = slide_system_prompt.replace("{PREVIOUS_SLIDES}", str(previous_slides)).replace("{NEXT_TOPIC}", section)
+        response = await agent.run(input=prompt_for_section)
+        logging.info("Response from async chat with tools function: ")
+        logging.info(response)
+        multi_slides_output = response["response"].response
+        for single_slide in multi_slides_output.slides:
+            sc = re.sub(r'\n+', '\n', single_slide.slide_content)
+            sc = convert_mermaid_diagrams_to_links(sc, module_id)
+            if "$$$start-markdown" in sc:
+                sc = sc[sc.index("$$$start-markdown")+12:sc.rindex("$$$end-markdown")]
+            slides.append({
+                "slide_header": single_slide.slide_header,
+                "slide_content": sc,
+                "speaker_notes": single_slide.speaker_notes
+            })
+        
 
-        slides.append({
-            "slide_header": response['response'].response.slide_header,
-            "slide_content": slide_content,
-            "speaker_notes": response['response'].response.speaker_notes
-        })
+    # get the first welcome slide and the last thank you slide for the module.
+    llm = LLM()
+    prompt = PromptHandler().get_prompt("GET_WELCOME_THANK_YOU_SLIDE_PROMPT")
+    prompt = PromptTemplate(template=prompt, inputs=["SLIDES", "MODULE_NAME"])
+    response = llm.get_response(prompt, inputs={"SLIDES": str(slides), "MODULE_NAME": module_name})
+    welcome_message = ""
+    thank_you_message = ""
 
-        # get the first welcome slide and the last thank you slide for the module.
-        from dags.utils.llm import LLM
-        llm = LLM()
-        prompt = PromptHandler().get_prompt("GET_WELCOME_THANK_YOU_SLIDE_PROMPT")
-        prompt = PromptTemplate(template=prompt, inputs=["SLIDES", "MODULE_NAME"])
-        response = llm.get_response(prompt, inputs={"SLIDES": str(slides), "MODULE_NAME": module_name})
-        welcome_message = ""
-        thank_you_message = ""
-
+    try:
+        response = json.loads(response[response.index("```json")+7:response.rindex("```")])
+        welcome_message = response["welcome_slide"]["speaker_notes"]
+        thank_you_message = response["thank_you_slide"]["speaker_notes"]
+    except:
         try:
-            response = json.loads(response[response.index("```json")+7:response.rindex("```")])
+            response = json.loads(response[response.index("{"):response.rindex("}")+1])
             welcome_message = response["welcome_slide"]["speaker_notes"]
             thank_you_message = response["thank_you_slide"]["speaker_notes"]
         except:
-            try:
-                response = json.loads(response[response.index("{"):response.rindex("}")+1])
-                welcome_message = response["welcome_slide"]["speaker_notes"]
-                thank_you_message = response["thank_you_slide"]["speaker_notes"]
-            except:
-                logging.info("Error in parsing the welcome and thank you message")
-                welcome_message = "Hello, welcome to the module: "+module_name
-                thank_you_message = "Thank you for completing the module."
-        slides.insert(0, {
-            "slide_header": "",
-            "slide_content": f"# {module_name}",
-            "speaker_notes": welcome_message
-        })
-        slides.append({
-            "slide_header": "",
-            "slide_content": "### Thank you\n\n![Thank you](https://qucoursify.s3.us-east-1.amazonaws.com/qu-skillbridge/last_page.png)",
-            "speaker_notes": thank_you_message
-        })
+            logging.info("Error in parsing the welcome and thank you message")
+            welcome_message = "Hello, welcome to the module: "+module_name
+            thank_you_message = "Thank you for completing the module."
+
+    slides.insert(0, {
+        "slide_header": "",
+        "slide_content": f"% {module_name}",
+        "speaker_notes": welcome_message
+    })
+    slides.append({
+        "slide_header": "",
+        "slide_content": "![](https://qucoursify.s3.us-east-1.amazonaws.com/qu-skillbridge/last_page.png)",
+        "speaker_notes": thank_you_message
+    })
+    
+    # get structured response for the slide if it is not in the proper structure
+    # if isinstance(slides, str):
+    #     try:
+    #         slides = json.loads(slides[slides.index("["):slides.rindex("]")+1])
+    #         # check if structure is correct
+    #         if not isinstance(slides, list):
+    #             raise Exception("Not a list")
+    #         for slide in slides:
+    #             if not isinstance(slide, dict):
+    #                 raise Exception("Not a dict")
+    #             if "slide_header" not in slide or "slide_content" not in slide or "speaker_notes" not in slide:
+    #                 raise Exception("Not in proper format")
+    #     except:
+    #         message="""
+    #         Given the slides, generate it in proper format according to the following format:
+    #         ```json
+    #         [
+    #             {
+    #                 "slide_header": "Slide Header",
+    #                 "slide_content": "Slide content in Markdown",
+    #                 "speaker_notes": "Corresponding speaker notes"
+    #             },
+    #             {
+    #                 "slide_header": "Next Slide Header",
+    #                 "slide_content": "Next slide content in Markdown",
+    #                 "speaker_notes": "Corresponding speaker notes"
+    #             }
+    #             ...
+    #         ]
+    #         ```
+    #         """
+            
+    #         from litellm import completion
+    #         slides = completion(model=os.getenv("OPENAI_MODEL"),  api_key=os.getenv("OPENAI_KEY"),
+    #                             messages=[
+    #                                 {"role": "user", "content": message},
+    #                                 {"role": "user", "content": "The slides are: "+str(slides)},
+    #                             ]
+    #             )
+    #         logging.info("Response from the LLM: "+str(slides))
+    #         slides = json.loads(slides[slides.index("["):slides.rindex("]")+1])
+    #         logging.info("Slides after parsing: "+str(slides))
 
     return slides
 
@@ -784,10 +899,12 @@ async def get_slides(module_id, outline, module_name):
 async def get_module_information(module_id, outline):
 
     # generate teh module information using an llm
+    logging.info("Creating information for the outline")
+    logging.info(outline)
     prompt = PromptHandler().get_prompt("GET_MODULE_INFORMATION_PROMPT")
+    prompt = PromptTemplate(template=prompt, inputs=["OUTLINE"])
     llm = LLM()
-    response = llm.get_response(
-        prompt+str(outline))
+    response = llm.get_response(prompt, inputs={"OUTLINE": outline})
     logging.info(response)
 
     return response

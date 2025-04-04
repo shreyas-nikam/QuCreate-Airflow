@@ -475,5 +475,33 @@ class S3FileManager:
             logging.error(f"Error uploading file to S3: {e}")
             return False
 
+    async def upload_png_image(self, file_path, key):
+        """
+        Upload a PNG image file to S3
+
+        Args:
+        file_path: str - path to the PNG image file to be uploaded
+        key: str - key to be used in the S3 bucket
+
+        Returns:
+        bool: True if the file was uploaded successfully, False otherwise
+        """
+        try:
+            self.s3_client.upload_file(file_path, self.bucket_name, key, ExtraArgs={'ContentType': 'image/png'})
+            self.make_object_public(key)
+            return True
+        except FileNotFoundError:
+            logging.error("The file was not found")
+            return False
+        except NoCredentialsError:
+            logging.error("Credentials not available")
+            return False
+        except ClientError as e:
+            logging.error(e)
+            return False
+        except Exception as e:
+            logging.error(f"An error occurred: {e}")
+            return False
+
         
     

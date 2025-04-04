@@ -268,44 +268,85 @@ Instructions:
 
     "GET_SLIDE_PROMPT":
     """
-Based on the outline and the context provided, give me the contents for the a slide and the speaker notes for the corresponding slide.
-The slide should have slide header, slide content, and speaker notes.
-The slide should cover the minimum content that can be covered in a slide. Do not have too much content on a single slide.
-At least one slide should contain a mermaid diagram compulsorily.
-Use diagrams wherever possible.
-If there are diagrams or images on a slide, there should not be any other text on the slide.
-
+Based on the topic use the chunk retriever tool and doc retriever tool to get more context and give me the contents for one or more slides.
+The slides should have slide header, slide content, and speaker notes.
 
 Slide Header Instructions:
 The headers should not be long and appropriate for the content on the slide.  
 
 Slide Content Instructions:
-1. Summarize the content in 4-5 bullet points only.
-2. Give me the output in the given example Markdown format only.  
-3. Bullet points should compulsorily begin with a *.  
+1. Summarize the content in 3-5 bullet points.
+2. Give me the output in the given example Markdown format with proper highlighting.  
+3. Bullet points should compulsorily begin with a -.   
+4. A slide should have a mermaid diagram or a image or a table or a blockquote along with the content.
 
 
 Example output markdown format for slide content:  
-```markdown
-* In a point, here's an [URL to example](https://www.example.com). This explains why this url is important.
-* One  
-    * One A focuses on **this** point that speaks about the importance of this point that is highlighted in bold.
-    * One B has this **important point** that is crucial for understanding the content. All the highlighted points should be in bold.
-* Two is the second point that is important for the content.
-* Three is the third point that is important for the content.
+$$$start-markdown
+- In a point, here's an [URL to example](https://www.example.com). This explains why this url is important.
+- One  
+    - One A focuses on **this** point that speaks about the importance of this point that is highlighted in bold.
+    - One B has this **important point** that is crucial for understanding the content. All the highlighted points should be in bold.
+- Two is the second point that is important for the content.
+- Three is the third point that is important for the content.
+\n
+\n
+```mermaid
+flowchart LR
+        A[Start] --> B{Decision}
+        B -->|Yes| C[Option 1]
+        B -->|No| D[Option 2]
+        C --> E[End]
+        D --> E
+        E --> F[End]
 ```
+OR
+> This is a blockquote that provides additional information or context related to the content.
+OR
+- ![Image description](path/to/image.extension)
+OR
+| Table Header 1 | Table Header 2 | Table Header 3 |
+|----------------|----------------|----------------|
+| Row 1 Column 1 | Row 1 Column 2 | Row 1 Column 3 |
+| Row 2 Column 1 | Row 2 Column 2 | Row 2 Column 3 |
+| Row 3 Column 1 | Row 3 Column 2 | Row 3 Column 3 |
+
+$$$end-markdown
 
 Speaker Notes Instructions:
-You are given the content for a slide in a module and the context of the content. You need to create speaker notes for the slide only based on the slide content.
-The speaker notes should be in a neutral tone with a continuous flow.  
-Do not expand acronyms in the speaker notes.
-Do not have any opening remarks like hello, welcome or ending remarks like thank you in the speaker notes.  
-Do not return anything other than the output string.  
-Speak in continuation as if you were continuing from the previous slide. Do not use comments like 'welcome', 'today, we will discuss', 'in this slide', 'this slide discusses', etc. in the speaker notes.  
-For formulae, do not use latex content, instead use words appropriate for the formulae so that they can be converted to audio.
+1. The speaker notes will be converted to audio using tts.
+2. The speaker notes should be in an excited tone with a continuous flow across the slides. Use filler words to make it sound more natural.
+3. Each bullet point or diagram or image should be explained in about 3-5 sentences. So in total, there should be about 9-20 sentences in the speaker notes.
+4. Do not expand acronyms in the speaker notes on your own.
+5. Do not have any opening remarks like hello, welcome, 'in this slide', or 'in slide #' in the speaker notes.  
+6. Speak in continuation as if you were continuing from the previous slide.
+7. For formulae, do not use latex content, instead use words appropriate for the formulae so that they can be converted to audio.
+8. If the slide content will contain an image, diagram, or table, then the speaker notes should explain the image, diagram, or table in detail.
+9. Do not use comments like 'today, we will discuss', 'this slide discusses', etc. in the speaker notes.
+10. For the references slide, just say: "Here are some references and additional readings for more information."
 
-Outline for the slide:
+Output Format:
+{
+    slides: [
+        {
+            "slide_header": "Slide Header",
+            "slide_content": "Slide Content",
+            "speaker_notes": "Speaker Notes"
+        },
+        {
+            "slide_header": "Slide Header",
+            "slide_content": "Slide Content",
+            "speaker_notes": "Speaker Notes"
+        }
+        ...
+    ]
+}
 
+Previously generated slides:
+{PREVIOUS_SLIDES}
+
+Next Topic:
+{NEXT_TOPIC}
 """,
     "BREAK_OUTLINE_PROMPT": """
 You are given an outline for a presentation. You need to break down the outline into individual slides.
@@ -358,6 +399,7 @@ Given the outline of a slide deck, you need to write the module information for 
 It should cover what the module will cover.
 The output should be in one paragraph and 3-5 or more bullet points.
 Do not return anything other than the output string.
+Return hte output in markdown highlighting relevant points in bold.
 
 Example:
 Input:
@@ -367,12 +409,12 @@ Input:
 
 Output:
 The module will cover AI in Financial Report Writing, Natural Language Processing (NLP) in Finance, and Generative AI for Marketing and Client Engagement.
-- AI-powered tools for automatic generation of financial reports, quarterly earnings, and forecasts
-- How NLP models can automate content such as market commentary, regulatory documents, or credit analysis
-- Personalized content marketing and customer engagement at scale
+- *AI-powered tools* for automatic generation of financial reports, quarterly earnings, and forecasts
+- How *NLP models* can automate content such as market commentary, regulatory documents, or credit analysis
+- Personalized content marketing and customer engagement at *scale*
 
 Input:
-
+{OUTLINE}
 """,
 
 
@@ -735,14 +777,14 @@ Module Name: {MODULE_NAME}
 
 Output format:
 ```json
-{
-    "welcome_slide": {
+{{
+    "welcome_slide": {{
         "speaker_notes": "welcome speaker notes..."
-    },
-    "thank_you_slide": {
+    }},
+    "thank_you_slide": {{
         "speaker_notes": "thank you speaker notes..."
-    }
-}
+    }}
+}}
 ```
 """
 }

@@ -224,7 +224,7 @@ async def _update_modules(course_id, course):
     # Process each module
     for module in modules:
         module_id = module["module_id"]
-        module_ids.append(module_id)
+        w.append(module_id)
         slide_names.append(module["module_name"])
         module['status'] = "Published"
 

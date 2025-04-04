@@ -5,7 +5,7 @@
 1. **Install LibreOffice & Mermaid CLI**  
    ```bash
    sudo apt update
-   sudo apt install libreoffice
+   sudo apt install libreoffice ffmpeg
    # Check if soffice is installed by running:
    soffice --version
 

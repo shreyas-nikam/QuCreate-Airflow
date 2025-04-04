@@ -21,6 +21,7 @@ from pptx.util import Inches, Pt
 # Local imports
 from utils.mongodb_client import AtlasClient
 from utils.s3_file_manager import S3FileManager
+from course.helper import convert_mermaid_diagrams_to_links
 
 
 def _get_course_and_module(course_id, module_id):
@@ -71,15 +72,20 @@ def _extract_content(module_name, slide_content_key):
         s3_client = S3FileManager()
         response = s3_client.get_object(slide_content_key)
         slide_content = json.loads(response["Body"].read())
+        
+        logging.info(f"Slide content: {slide_content}")
+        logging.info(type(slide_content))
 
-        markdown = f"""
-"""
+        markdown = f""""""
         transcript = []
 
-        for slide in slide_content:
-            markdown += f"\n# {slide['slide_header']}\n\n{slide_content}\n\n"
+        for index, slide in enumerate(slide_content):
+            if index==0:
+                markdown+= f"{slide['slide_content']}\n\n"
+            else:
+                markdown += f"\n# {slide['slide_header']}\n\n{slide['slide_content']}\n\n"
             transcript.append(slide["speaker_notes"])
-            markdown.append("\n---\n")
+            markdown+="\n---\n"
 
         return markdown, transcript
 
@@ -100,9 +106,13 @@ def _generate_pptx(markdown, module_id, template_doc="https://qucoursify.s3.us-e
         output_ppt_path = output_dir / "structure.pptx"
         reference_template = Path(f"dags/course/templates/{template_doc.split('/')[-1]}")
 
+        markdown = convert_mermaid_diagrams_to_links(markdown, module_id)
+
         # Write markdown content to file
         with open(md_file_path, "w") as f:
             f.write(markdown)
+
+        pypandoc.download_pandoc()
         
         # Convert Markdown to PPTX using Pandoc
         pypandoc.convert_file(
@@ -135,24 +145,18 @@ def _format_ppt(output_ppt_path,
 
     prs = Presentation(output_ppt_path)
 
-    # remove first slide from ppt
     del prs.slides._sldIdLst[0]
-
-    prs.save(output_ppt_path)
-
-    # Reopen the presentation to save the changes
-    prs = Presentation(output_ppt_path)
 
     slide_number = 0
     for slide in prs.slides:
 
-        if slide_number > 0:
-            # move the title and content down by one inch
-            top_margin = 0.7
-            for shape in slide.shapes:
-                if shape.has_text_frame:
-                    shape.top = Inches(top_margin)
-                    top_margin = 1.5
+        # if slide_number > 0:
+        #     # move the title and content down by one inch
+        #     top_margin = 0.7
+        #     for shape in slide.shapes:
+        #         if shape.has_text_frame:
+        #             shape.top = Inches(top_margin)
+        #             top_margin = 1.5
 
         # add speaker notes to all slides
         try:
@@ -169,22 +173,22 @@ def _format_ppt(output_ppt_path,
         slide.shapes.add_picture(logo_path, left, top, width=width)
 
         # Add header to the top of each slide
-        left = 0
-        top = 0
-        width = prs.slide_width
-        slide.shapes.add_picture(header, left, top, width=width)
+        # left = 0
+        # top = 0
+        # width = prs.slide_width
+        # slide.shapes.add_picture(header, left, top, width=width)
 
         # Add page number to the top right corner of each slide
-        left = prs.slide_width - Inches(0.5)
-        top = Inches(0.5)
-        width = Inches(0.5)
-        slide_number_box = slide.shapes.add_textbox(
-            left, top, width, width)
-        text_frame = slide_number_box.text_frame
-        p = text_frame.add_paragraph()
-        p.text = f"{slide_number+1}"
-        p.margin_top = 0
-        p.font.bold = True
+        # left = prs.slide_width - Inches(0.2)
+        # top = Inches(0.2)
+        # width = Inches(0.2)
+        # slide_number_box = slide.shapes.add_textbox(
+        #     left, top, width, width)
+        # text_frame = slide_number_box.text_frame
+        # p = text_frame.add_paragraph()
+        # p.text = f"{slide_number+1}"
+        # p.margin_top = 0
+        # p.font.bold = False
 
         slide_number += 1
 
